@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Trash2 } from 'lucide-react';
 
 interface ConsoleProps {
   output: string;
@@ -28,51 +32,47 @@ export default function Console({
   const hasContent = output || error;
 
   return (
-    <div className="h-full flex flex-col bg-[#0d1117] border-t border-[#30363d]">
+    <div className="h-full flex flex-col bg-background border-t">
       {/* Console Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+      <div className="flex items-center justify-between px-4 py-2 bg-card border-b">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-[#8b949e]">Console</span>
+          <span className="text-sm font-medium text-muted-foreground">Console</span>
           {isRunning && (
-            <span className="flex items-center gap-2 text-xs text-[#58a6ff]">
-              <span className="inline-block w-2 h-2 bg-[#58a6ff] rounded-full animate-pulse" />
+            <Badge variant="secondary" className="gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
               Running...
-            </span>
+            </Badge>
           )}
           {!isRunning && executionTime !== undefined && executionTime > 0 && (
-            <span className="text-xs text-[#8b949e]">
-              Executed in {executionTime}ms
-            </span>
+            <Badge variant="outline" className="text-xs">
+              {executionTime}ms
+            </Badge>
           )}
         </div>
-        <button
-          onClick={onClear}
-          className="px-2 py-1 text-xs text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d] rounded transition-colors"
-        >
+        <Button variant="ghost" size="sm" onClick={onClear}>
+          <Trash2 className="h-4 w-4" />
           Clear
-        </button>
+        </Button>
       </div>
 
       {/* Console Output */}
-      <div 
-        ref={outputRef}
-        className="flex-1 overflow-auto p-4 font-mono text-sm"
-      >
-        {!hasContent && !isRunning && (
-          <span className="text-[#484f58]">
-            Press Cmd/Ctrl + Enter or click Run to execute your code
-          </span>
-        )}
-        
-        {output && (
-          <pre className="whitespace-pre-wrap text-[#c9d1d9]">{output}</pre>
-        )}
-        
-        {error && (
-          <pre className="whitespace-pre-wrap text-[#f85149] mt-2">{error}</pre>
-        )}
-      </div>
+      <ScrollArea className="flex-1">
+        <div ref={outputRef} className="p-4 font-mono text-sm">
+          {!hasContent && !isRunning && (
+            <span className="text-muted-foreground/50">
+              Press Cmd/Ctrl + Enter or click Run to execute your code
+            </span>
+          )}
+          
+          {output && (
+            <pre className="whitespace-pre-wrap">{output}</pre>
+          )}
+          
+          {error && (
+            <pre className="whitespace-pre-wrap text-destructive mt-2">{error}</pre>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }
-

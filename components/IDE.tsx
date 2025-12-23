@@ -8,6 +8,7 @@ import Console from './Console';
 import Toolbar from './Toolbar';
 import SaveDialog from './SaveDialog';
 import SnippetsList from './SnippetsList';
+import languageTemplates from '@/lib/code-templates';
 
 // Dynamically import Monaco Editor to avoid SSR issues
 const Editor = dynamic(() => import('./Editor'), { 
@@ -19,59 +20,6 @@ const Editor = dynamic(() => import('./Editor'), {
   ),
 });
 
-const defaultCode: Record<Language, string> = {
-  javascript: `// JavaScript Example
-function greet(name) {
-  return \`Hello, \${name}!\`;
-}
-
-console.log(greet('World'));
-console.log('Welcome to the Interview IDE');
-`,
-  typescript: `// TypeScript Example
-function greet(name: string): string {
-  return \`Hello, \${name}!\`;
-}
-
-console.log(greet('World'));
-console.log('Welcome to the Interview IDE');
-`,
-  python: `# Python Example with Libraries
-import json
-from collections import defaultdict, Counter
-from datetime import datetime
-
-# You can also use: numpy, pandas, scipy, requests
-# (if installed on the server)
-
-def greet(name):
-    return f"Hello, {name}!"
-
-# Example with standard library
-data = {"message": greet("World"), "timestamp": str(datetime.now())}
-print(json.dumps(data, indent=2))
-
-# Example with collections
-words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
-word_counts = Counter(words)
-print(f"\\nWord counts: {dict(word_counts)}")
-`,
-  go: `// Go Example
-package main
-
-import "fmt"
-
-func greet(name string) string {
-    return fmt.Sprintf("Hello, %s!", name)
-}
-
-func main() {
-    fmt.Println(greet("World"))
-    fmt.Println("Welcome to the Interview IDE")
-}
-`,
-};
-
 interface ExecutionResult {
   output: string;
   error: string;
@@ -81,7 +29,7 @@ interface ExecutionResult {
 
 export default function IDE() {
   const [language, setLanguage] = useState<Language>('javascript');
-  const [code, setCode] = useState<string>(defaultCode.javascript);
+  const [code, setCode] = useState<string>(languageTemplates.javascript);
   const [output, setOutput] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -113,7 +61,7 @@ export default function IDE() {
 
   const handleLanguageChange = useCallback((newLanguage: Language) => {
     setLanguage(newLanguage);
-    setCode(defaultCode[newLanguage]);
+    setCode(languageTemplates[newLanguage]);
     setCurrentSnippet(null);
     setSavedCode('');
     // Clear console when switching languages
@@ -260,7 +208,7 @@ export default function IDE() {
       {/* Main content area with resizable panels */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Editor Panel - 60% */}
-        <div className="flex-[6] min-h-0">
+        <div className="flex-6 min-h-0">
           <Editor
             code={code}
             language={language}
@@ -270,7 +218,7 @@ export default function IDE() {
         </div>
         
         {/* Console Panel - 40% */}
-        <div className="flex-[4] min-h-0">
+        <div className="flex-4 min-h-0">
           <Console
             output={output}
             error={error}

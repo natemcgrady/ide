@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     if (!roomId || typeof roomId !== "string") {
       return NextResponse.json(
         { error: "room or fileId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

@@ -58,6 +58,7 @@ export default function CollaborativeEditor({
   const providerRef = useRef<LiveblocksYjsProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorStylesRef = useRef<HTMLStyleElement | null>(null);
 
   // Debounced save to Neon — write users only. The PATCH endpoint also
   // enforces write-access server-side.
@@ -93,6 +94,62 @@ export default function CollaborativeEditor({
     setEditorReady(true);
 
     const ytext = ydoc.getText("monaco");
+    const ensureCursorStylesElement = () => {
+      if (cursorStylesRef.current) return cursorStylesRef.current;
+      const styleEl = document.createElement("style");
+      styleEl.setAttribute("data-collab-cursor-styles", roomId);
+      document.head.appendChild(styleEl);
+      cursorStylesRef.current = styleEl;
+      return styleEl;
+    };
+
+    const escapeCssString = (value: string) =>
+      value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+    const updateCursorStyles = () => {
+      if (!mounted) return;
+      const styleEl = ensureCursorStylesElement();
+      const localClientId = ydoc.clientID;
+      const states = provider.awareness.getStates();
+      const rules: string[] = [];
+
+      states.forEach((state, clientId) => {
+        if (clientId === localClientId) return;
+        const s = state as Record<string, unknown>;
+        const userObj =
+          typeof s.user === "object" && s.user !== null
+            ? (s.user as Record<string, unknown>)
+            : null;
+        const userId =
+          typeof s.userId === "string"
+            ? s.userId
+            : typeof userObj?.name === "string"
+              ? userObj.name
+              : String(clientId);
+        const name =
+          typeof s.name === "string"
+            ? s.name
+            : typeof userObj?.name === "string"
+              ? userObj.name
+              : "Anonymous";
+        const color =
+          typeof s.color === "string"
+            ? s.color
+            : typeof userObj?.color === "string"
+              ? userObj.color
+              : hashToColor(userId);
+        const safeName = escapeCssString(name);
+
+        rules.push(
+          `.yRemoteSelection-${clientId}{--y-color:${color};background-color:color-mix(in srgb, ${color} 25%, transparent);}`,
+          `.yRemoteSelectionHead-${clientId}{--y-color:${color};border-color:${color};}`,
+          `.yRemoteSelectionHead-${clientId}::after{content:"${safeName}";background-color:${color};opacity:0;transform:translateY(-2px);transition:opacity 120ms ease, transform 120ms ease;}`,
+          `.yRemoteSelectionHead-${clientId}:hover::after{opacity:1;transform:translateY(0);}`
+        );
+      });
+
+      styleEl.textContent = rules.join("\n");
+    };
 
     // Keep local awareness populated for both y-monaco (state.user.*) and
     // our toolbar presence list (top-level fields).
@@ -125,7 +182,9 @@ export default function CollaborativeEditor({
     // Presence bar — rebuild whenever awareness changes.
     // The local client's entry in getStates() keyed by doc.clientID.
     const handleAwarenessChange = () => {
-      if (!mounted || !onPresenceChange) return;
+      if (!mounted) return;
+      updateCursorStyles();
+      if (!onPresenceChange) return;
       const users: CollaboratorPresence[] = [];
       const states = provider.awareness.getStates();
       const localClientId = ydoc.clientID;
@@ -152,6 +211,7 @@ export default function CollaborativeEditor({
       onPresenceChange(users);
     };
 
+    updateCursorStyles();
     provider.awareness.on("change", handleAwarenessChange);
 
     // Seed the Yjs doc from Neon if the Liveblocks room is brand new.
@@ -183,6 +243,10 @@ export default function CollaborativeEditor({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       bindingRef.current?.destroy();
       bindingRef.current = null;
+      if (cursorStylesRef.current) {
+        cursorStylesRef.current.remove();
+        cursorStylesRef.current = null;
+      }
       provider.destroy();
       providerRef.current = null;
       ydocRef.current = null;

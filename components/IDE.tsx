@@ -1,14 +1,10 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { Language } from "@/lib/executor";
-import type { CodeSnippet } from "@/lib/db/schema";
-import { isSupportedLanguage } from "@/lib/languages";
 import Console from "./Console";
 import Toolbar from "./Toolbar";
-import SaveDialog from "./SaveDialog";
-import SnippetsList from "./SnippetsList";
 import languageTemplates from "@/lib/code-templates";
 
 // Dynamically import Monaco Editor to avoid SSR issues
@@ -38,37 +34,9 @@ export default function IDE() {
     undefined,
   );
 
-  // Snippet management state
-  const [currentSnippet, setCurrentSnippet] = useState<CodeSnippet | null>(
-    null,
-  );
-  const [savedCode, setSavedCode] = useState<string>("");
-  const [snippets, setSnippets] = useState<CodeSnippet[]>([]);
-  const [isLoadingSnippets, setIsLoadingSnippets] = useState(false);
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [showSnippetsList, setShowSnippetsList] = useState(false);
-
-  const hasUnsavedChanges = currentSnippet ? code !== savedCode : false;
-
-  // Fetch snippets when opening the list
-  const fetchSnippets = useCallback(async () => {
-    setIsLoadingSnippets(true);
-    try {
-      const response = await fetch("/api/snippets");
-      const data = await response.json();
-      setSnippets(data);
-    } catch (err) {
-      console.error("Failed to fetch snippets:", err);
-    } finally {
-      setIsLoadingSnippets(false);
-    }
-  }, []);
-
   const handleLanguageChange = useCallback((newLanguage: Language) => {
     setLanguage(newLanguage);
     setCode(languageTemplates[newLanguage]);
-    setCurrentSnippet(null);
-    setSavedCode("");
     // Clear console when switching languages
     setOutput("");
     setError("");
@@ -112,111 +80,13 @@ export default function IDE() {
     setExecutionTime(undefined);
   }, []);
 
-  const handleSave = useCallback(
-    async (name: string) => {
-      try {
-        if (currentSnippet) {
-          // Update existing snippet
-          const response = await fetch("/api/snippets", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: currentSnippet.id,
-              name,
-              code,
-              language,
-            }),
-          });
-          const updated = await response.json();
-          setCurrentSnippet(updated);
-          setSavedCode(code);
-        } else {
-          // Create new snippet
-          const response = await fetch("/api/snippets", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, code, language }),
-          });
-          const created = await response.json();
-          setCurrentSnippet(created);
-          setSavedCode(code);
-        }
-        setShowSaveDialog(false);
-      } catch (err) {
-        console.error("Failed to save snippet:", err);
-      }
-    },
-    [code, language, currentSnippet],
-  );
-
-  const handleLoadSnippet = useCallback((snippet: CodeSnippet) => {
-    setCode(snippet.code);
-    const normalized = snippet.language?.toLowerCase();
-    setLanguage(
-      (isSupportedLanguage(normalized) ? normalized : 'python') as Language
-    );
-    setCurrentSnippet(snippet);
-    setSavedCode(snippet.code);
-    setShowSnippetsList(false);
-    setOutput("");
-    setError("");
-    setExecutionTime(undefined);
-  }, []);
-
-  const handleDeleteSnippet = useCallback(
-    async (id: string) => {
-      try {
-        await fetch(`/api/snippets?id=${id}`, { method: "DELETE" });
-        setSnippets((prev) => prev.filter((s) => s.id !== id));
-        if (currentSnippet?.id === id) {
-          setCurrentSnippet(null);
-          setSavedCode("");
-        }
-      } catch (err) {
-        console.error("Failed to delete snippet:", err);
-      }
-    },
-    [currentSnippet],
-  );
-
-  const handleOpenSaveDialog = useCallback(() => {
-    setShowSaveDialog(true);
-  }, []);
-
-  const handleOpenSnippetsList = useCallback(() => {
-    fetchSnippets();
-    setShowSnippetsList(true);
-  }, [fetchSnippets]);
-
-  // Keyboard shortcut for save (Cmd/Ctrl+S)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        if (currentSnippet) {
-          // Quick save if already has a name
-          handleSave(currentSnippet.name);
-        } else {
-          setShowSaveDialog(true);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentSnippet, handleSave]);
-
   return (
     <div className="flex h-screen flex-col bg-background">
       <Toolbar
         language={language}
         onLanguageChange={handleLanguageChange}
         onRun={handleRun}
-        onSave={handleOpenSaveDialog}
-        onLoad={handleOpenSnippetsList}
         isRunning={isRunning}
-        currentSnippetName={currentSnippet?.name}
-        hasUnsavedChanges={hasUnsavedChanges}
       />
 
       <div className="grid min-h-0 flex-1 grid-rows-[6fr_4fr]">
@@ -239,25 +109,6 @@ export default function IDE() {
           />
         </div>
       </div>
-
-      {/* Save Dialog */}
-      <SaveDialog
-        isOpen={showSaveDialog}
-        onClose={() => setShowSaveDialog(false)}
-        onSave={handleSave}
-        defaultName={currentSnippet?.name || ""}
-        isUpdating={!!currentSnippet}
-      />
-
-      {/* Snippets List */}
-      <SnippetsList
-        isOpen={showSnippetsList}
-        onClose={() => setShowSnippetsList(false)}
-        snippets={snippets}
-        onLoad={handleLoadSnippet}
-        onDelete={handleDeleteSnippet}
-        isLoading={isLoadingSnippets}
-      />
     </div>
   );
 }

@@ -55,14 +55,22 @@ pnpm db:generate && pnpm db:migrate
 
 ## Real-time Collaboration
 
-Collaborative editing uses Yjs + Hocuspocus. Run the collab server (separate process):
+Collaborative editing uses Yjs over [Liveblocks](https://liveblocks.io) managed infrastructure — no separate WebSocket server is required.
 
-```bash
-pnpm collab
-```
+1. Create a free Liveblocks account at <https://liveblocks.io> and copy your **Secret Key** from the dashboard.
+2. Add `LIVEBLOCKS_SECRET_KEY=sk_...` to `.env.local`.
 
-Set `COLLAB_SERVER_URL` and `COLLAB_JWT_SECRET` in `.env.local`. See [docs/E2E-CHECKLIST.md](docs/E2E-CHECKLIST.md) for manual testing.
+That's it. Conflict-free simultaneous editing, live cursors, and presence avatars all work through the Next.js API routes deployed on Vercel.
 
 ## Deploy
 
-Deploy with Vercel and configure Sandbox credentials in project settings. For collaboration, deploy the collab server separately (e.g. Railway, Render, or a long-running Node process).
+Deploy with Vercel and set the following environment variables in your project settings:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Neon PostgreSQL connection string |
+| `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID` | Vercel OAuth client ID |
+| `VERCEL_APP_CLIENT_SECRET` | Vercel OAuth client secret |
+| `LIVEBLOCKS_SECRET_KEY` | Liveblocks secret key (`sk_...`) |
+
+No secondary runtime or service is required.

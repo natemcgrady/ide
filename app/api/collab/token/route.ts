@@ -1,55 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Liveblocks } from "@liveblocks/node";
 import { requireAuth, requireFileReadAccess } from "@/lib/auth";
-import { SignJWT } from "jose";
+import { hasFileAccess } from "@/lib/db/queries/collaborators";
+
+const liveblocks = new Liveblocks({
+  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
+});
 
 export async function POST(request: NextRequest) {
   try {
     const user = await requireAuth();
-    const body = await request.json().catch(() => ({}));
-    const fileId = (body as { fileId?: string }).fileId;
 
-    if (!fileId || typeof fileId !== "string") {
+    const body = await request.json().catch(() => ({}));
+
+    // Liveblocks SDK posts { room: "file:<uuid>" } when entering a room.
+    // We also accept a plain { fileId } for backwards-compatible callers.
+    const raw = body as { room?: string; fileId?: string };
+    const roomId = raw.room ?? (raw.fileId ? `file:${raw.fileId}` : undefined);
+
+    if (!roomId || typeof roomId !== "string") {
       return NextResponse.json(
-        { error: "fileId is required" },
+        { error: "room or fileId is required" },
         { status: 400 }
       );
     }
 
+    if (!roomId.startsWith("file:")) {
+      return NextResponse.json({ error: "Invalid room" }, { status: 400 });
+    }
+
+    const fileId = roomId.slice("file:".length);
+
     await requireFileReadAccess(fileId, user);
 
-    const canWrite = await (async () => {
-      const { hasFileAccess } = await import("@/lib/db/queries/collaborators");
-      return hasFileAccess(fileId, user.id, "write");
-    })();
+    const canWrite = await hasFileAccess(fileId, user.id, "write");
 
-    const secret = new TextEncoder().encode(
-      process.env.COLLAB_JWT_SECRET ?? "dev-secret-change-in-production"
-    );
-
-    const token = await new SignJWT({
-      userId: user.id,
-      fileId,
-      permission: canWrite ? "write" : "read",
-      name: user.name ?? user.username ?? "Anonymous",
-      avatar: user.avatarUrl,
-    })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("2h")
-      .sign(secret);
-
-    const wsUrl =
-      process.env.COLLAB_SERVER_URL?.replace(/^http/, "ws") ??
-      "ws://localhost:1234";
-
-    return NextResponse.json({
-      token,
-      url: wsUrl,
-      user: {
-        id: user.id,
+    const session = liveblocks.prepareSession(user.id, {
+      userInfo: {
         name: user.name ?? user.username ?? "Anonymous",
-        avatar: user.avatarUrl,
+        avatar: user.avatarUrl ?? undefined,
       },
+    });
+
+    if (canWrite) {
+      session.allow(roomId, session.FULL_ACCESS);
+    } else {
+      session.allow(roomId, session.READ_ACCESS);
+    }
+
+    const { status, body: responseBody } = await session.authorize();
+    return new NextResponse(responseBody, {
+      status,
+      headers: { "Content-Type": "application/json" },
     });
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

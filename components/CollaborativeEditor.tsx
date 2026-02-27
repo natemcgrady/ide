@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type * as Monaco from "monaco-editor";
 import * as Y from "yjs";
-import { HocuspocusProvider } from "@hocuspocus/provider";
+import type { Awareness as YAwareness } from "y-protocols/awareness";
+import { createClient } from "@liveblocks/client";
+import { LiveblocksYjsProvider } from "@liveblocks/yjs";
 import { MonacoBinding } from "y-monaco";
 import MonacoEditor from "@monaco-editor/react";
 import type { Language } from "@/lib/executor";
+import { hashToColor } from "@/lib/collab/colors";
 
 const languageMap: Record<Language, string> = {
   typescript: "typescript",
@@ -20,26 +23,10 @@ export interface CollaboratorPresence {
   color: string;
 }
 
-const PRESENCE_COLORS = [
-  "#ef4444",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#14b8a6",
-  "#06b6d4",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-];
-
-function hashToColor(userId: string): string {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash << 5) - hash + userId.charCodeAt(i);
-    hash |= 0;
-  }
-  return PRESENCE_COLORS[Math.abs(hash) % PRESENCE_COLORS.length];
-}
+// Module-level singleton — one client handles all rooms.
+const liveblocksClient = createClient({
+  authEndpoint: "/api/collab/token",
+});
 
 interface CollaborativeEditorProps {
   fileId: string;
@@ -60,112 +47,150 @@ export default function CollaborativeEditor({
   onPresenceChange,
   getCodeRef,
 }: CollaborativeEditorProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [providerState, setProviderState] = useState<{
-    provider: HocuspocusProvider;
-    ydoc: Y.Doc;
-  } | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading"
+  );
+  // Expose provider + ydoc to handleMount via state (triggers re-render that
+  // makes the editor appear, so handleMount is called after refs are set).
+  const [editorReady, setEditorReady] = useState(false);
+
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const providerRef = useRef<LiveblocksYjsProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
-  const providerRef = useRef<HocuspocusProvider | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced save to Neon — write users only. The PATCH endpoint also
+  // enforces write-access server-side.
+  const debouncedSave = useCallback(
+    (text: string) => {
+      if (readOnly) return;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        try {
+          await fetch(`/api/files/${fileId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contentText: text }),
+          });
+        } catch {
+          // Will retry on next keystroke.
+        }
+      }, 2000);
+    },
+    [fileId, readOnly]
+  );
 
   useEffect(() => {
     let mounted = true;
+    const roomId = `file:${fileId}`;
 
-    const connect = async () => {
-      try {
-        const tokenRes = await fetch("/api/collab/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileId }),
+    const ydoc = new Y.Doc();
+    const { room, leave } = liveblocksClient.enterRoom(roomId);
+    const provider = new LiveblocksYjsProvider(room, ydoc);
+
+    ydocRef.current = ydoc;
+    providerRef.current = provider;
+    setEditorReady(true);
+
+    const ytext = ydoc.getText("monaco");
+
+    // Propagate local user identity into Yjs awareness so remote cursors are
+    // colored consistently with the presence ring in the toolbar.
+    const unsubSelf = room.subscribe("status", () => {
+      const self = room.getSelf();
+      if (!self?.id || !mounted) return;
+      const info = self.info as { name?: string; avatar?: string | null } | null;
+      const selfId: string = self.id;
+      provider.awareness.setLocalState({
+        userId: selfId,
+        name: info?.name ?? "Anonymous",
+        avatar: info?.avatar ?? null,
+        color: hashToColor(selfId),
+      });
+    });
+
+    // Presence bar — rebuild whenever awareness changes.
+    // The local client's entry in getStates() keyed by doc.clientID.
+    const handleAwarenessChange = () => {
+      if (!mounted || !onPresenceChange) return;
+      const users: CollaboratorPresence[] = [];
+      const states = provider.awareness.getStates();
+      const localClientId = ydoc.clientID;
+
+      states.forEach((state, clientId) => {
+        const s = state as Record<string, unknown>;
+        if (!s.userId) return;
+        const isLocal = clientId === localClientId;
+        users[isLocal ? "unshift" : "push"]({
+          userId: String(s.userId),
+          name: String(s.name ?? "Anonymous"),
+          avatar: typeof s.avatar === "string" ? s.avatar : null,
+          color: String(s.color ?? hashToColor(String(s.userId))),
         });
+      });
 
-        if (!tokenRes.ok) {
-          setStatus("error");
-          return;
-        }
-
-        const { token, url, user: userInfo } = await tokenRes.json();
-        const ydoc = new Y.Doc();
-        const ytext = ydoc.getText("monaco");
-
-        if (ytext.length === 0 && initialCode) {
-          ytext.insert(0, initialCode);
-        }
-
-        const provider = new HocuspocusProvider({
-          url,
-          name: fileId,
-          document: ydoc,
-          token,
-        });
-
-        const myColor = hashToColor(userInfo?.id ?? "me");
-        const awareness = provider.awareness;
-        if (awareness) {
-          awareness.setLocalStateField("userId", userInfo?.id ?? null);
-          awareness.setLocalStateField("name", userInfo?.name ?? "Anonymous");
-          awareness.setLocalStateField("avatar", userInfo?.avatar ?? null);
-          awareness.setLocalStateField("color", myColor);
-        }
-
-        provider.on("awarenessChange", ({ states }: { states: Array<Record<string, unknown>> }) => {
-          if (!mounted || !onPresenceChange) return;
-          const users: CollaboratorPresence[] = states
-            .filter((s) => s.userId != null && String(s.userId) !== "undefined")
-            .map((s) => ({
-              userId: String(s.userId),
-              name: String(s.name ?? "Anonymous"),
-              avatar: typeof s.avatar === "string" ? s.avatar : null,
-              color: (s.color as string) ?? hashToColor(String(s.userId)),
-            }));
-          onPresenceChange(users);
-        });
-
-        provider.on("synced", () => {
-          if (mounted) setStatus("ready");
-        });
-
-        provider.on("status", ({ status }: { status: string }) => {
-          if (status === "disconnected" && mounted) setStatus("error");
-        });
-
-        if (mounted) {
-          providerRef.current = provider;
-          setProviderState({ provider, ydoc });
-        } else {
-          provider.destroy();
-        }
-      } catch {
-        if (mounted) setStatus("error");
-      }
+      onPresenceChange(users);
     };
 
-    connect();
+    provider.awareness.on("change", handleAwarenessChange);
+
+    // Seed the Yjs doc from Neon if the Liveblocks room is brand new.
+    const handleSync = (synced: boolean) => {
+      if (!synced || !mounted) return;
+      if (ytext.length === 0 && initialCode) {
+        ytext.insert(0, initialCode);
+      }
+      setStatus("ready");
+    };
+
+    // LiveblocksYjsProvider emits "synced" and "sync" events (lib0 Observable).
+    (provider as unknown as { on: (e: string, fn: (v: boolean) => void) => void }).on(
+      "synced",
+      handleSync
+    );
+
+    // Debounced Neon save on every CRDT update (write users only).
+    if (!readOnly) {
+      ytext.observe(() => {
+        if (mounted) debouncedSave(ytext.toString());
+      });
+    }
 
     return () => {
       mounted = false;
+      unsubSelf();
+      provider.awareness.off("change", handleAwarenessChange);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       bindingRef.current?.destroy();
       bindingRef.current = null;
-      providerRef.current?.destroy();
+      provider.destroy();
       providerRef.current = null;
-      setProviderState(null);
+      ydocRef.current = null;
+      leave();
+      ydoc.destroy();
+      setEditorReady(false);
+      setStatus("loading");
     };
-  }, [fileId, initialCode, onPresenceChange]);
+  }, [fileId, initialCode, readOnly, onPresenceChange, debouncedSave]);
 
   const handleMount = useCallback(
     (editor: Monaco.editor.IStandaloneCodeEditor) => {
       const provider = providerRef.current;
-      if (!provider) return;
+      const ydoc = ydocRef.current;
+      if (!provider || !ydoc) return;
 
-      const ytext = provider.document.getText("monaco");
+      const ytext = ydoc.getText("monaco");
       const model = editor.getModel();
       if (!model) return;
 
+      // The Liveblocks awareness is structurally compatible with y-protocols
+      // Awareness at runtime (same getStates/on/off API, doc.clientID is used
+      // by y-monaco internally). Cast to satisfy the MonacoBinding type.
       const binding = new MonacoBinding(
         ytext,
         model,
         new Set([editor]),
-        provider.awareness
+        provider.awareness as unknown as YAwareness
       );
       bindingRef.current = binding;
 
@@ -183,17 +208,7 @@ export default function CollaborativeEditor({
     }
   };
 
-  if (status === "error") {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">
-          Could not connect to collaboration server. Editing in offline mode.
-        </p>
-      </div>
-    );
-  }
-
-  if (!providerState) {
+  if (!editorReady) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background">
         <span className="text-sm text-muted-foreground">

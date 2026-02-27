@@ -123,10 +123,7 @@ class ExecutionRunStore {
       });
 
       if (run.abortController.signal.aborted) {
-        if (run.status !== "cancelled") {
-          run.status = "cancelled";
-          this.emit(run, "cancelled", { message: "Execution cancelled" });
-        }
+        // cancel() is the single source of truth for cancelled status/event.
         run.finishedAt = Date.now();
         return;
       }
@@ -136,10 +133,7 @@ class ExecutionRunStore {
       this.emit(run, "completed", result as ExecutionResult);
     } catch (error) {
       if (run.abortController.signal.aborted) {
-        if (run.status !== "cancelled") {
-          run.status = "cancelled";
-          this.emit(run, "cancelled", { message: "Execution cancelled" });
-        }
+        // cancel() already set status + emitted cancelled event.
       } else {
         run.status = "failed";
         this.emit(run, "failed", {

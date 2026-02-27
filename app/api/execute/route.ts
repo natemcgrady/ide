@@ -13,7 +13,11 @@ interface ExecuteRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
+    const [cookieStore, body] = await Promise.all([
+      cookies(),
+      request.json() as Promise<ExecuteRequest>,
+    ]);
+
     const accessToken = cookieStore.get("access_token")?.value;
 
     if (!accessToken) {
@@ -28,8 +32,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body: ExecuteRequest = await request.json();
-    const { code, language } = body;
+    const { code, language } = (body ?? {}) as ExecuteRequest;
 
     // Validate input
     if (!code || typeof code !== "string") {

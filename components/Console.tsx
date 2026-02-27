@@ -38,7 +38,9 @@ export default function Console({
           </span>
           {isRunning && (
             <Badge className="gap-1.5">
-              <Loader2 className="size-3 animate-spin" />
+              <span className="animate-spin">
+                <Loader2 className="size-3" />
+              </span>
               Running...
             </Badge>
           )}

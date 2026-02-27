@@ -149,15 +149,22 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
 
   try {
     const snapshotId = process.env.VERCEL_PYTHON_SANDBOX_SNAPSHOT_ID;
-    sandbox = snapshotId
-      ? await Sandbox.create({
-          source: { type: "snapshot", snapshotId },
-          timeout: PYTHON_SANDBOX_TIMEOUT,
-        })
-      : await Sandbox.create({
-          runtime: "python3.13",
-          timeout: PYTHON_SANDBOX_TIMEOUT,
-        });
+
+    // Sandbox creation and requirements discovery are independent I/O; run in parallel
+    const [createdSandbox, requirements] = await Promise.all([
+      snapshotId
+        ? Sandbox.create({
+            source: { type: "snapshot", snapshotId },
+            timeout: PYTHON_SANDBOX_TIMEOUT,
+          })
+        : Sandbox.create({
+            runtime: "python3.13",
+            timeout: PYTHON_SANDBOX_TIMEOUT,
+          }),
+      getPythonRequirements(),
+    ]);
+
+    sandbox = createdSandbox;
 
     const pythonFileName = `code_${randomUUID()}.py`;
     const pythonFilePath = `${SANDBOX_WORKDIR}/${pythonFileName}`;
@@ -170,9 +177,7 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
     ]);
 
     let installWarning = "";
-    if (!snapshotId) {
-      const requirements = await getPythonRequirements();
-      if (requirements) {
+    if (!snapshotId && requirements) {
         await sandbox.writeFiles([
           {
             path: `${SANDBOX_WORKDIR}/requirements.txt`,
@@ -190,7 +195,6 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
         if (installResult.exitCode !== 0) {
           installWarning = `Dependency install warning:\n${installResult.error || installResult.output}`;
         }
-      }
     }
 
     const result = await runSandboxCommand(

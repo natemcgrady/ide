@@ -1,6 +1,7 @@
 "use client";
 
-import { useTransition, useEffect, useState } from "react";
+import { useTransition } from "react";
+import useSWR from "swr";
 import type { Language } from "@/lib/executor";
 import { Button } from "@/components/ui/button";
 import LanguageSelector from "./LanguageSelector";
@@ -20,6 +21,11 @@ interface UserData {
   avatar: string | null;
 }
 
+const userFetcher = async (url: string): Promise<UserData | null> => {
+  const res = await fetch(url);
+  return res.ok ? res.json() : null;
+};
+
 interface ToolbarProps {
   language: Language;
   onLanguageChange: (language: Language) => void;
@@ -34,20 +40,21 @@ export default function Toolbar({
   isRunning,
 }: ToolbarProps) {
   const [isPending, startTransition] = useTransition();
-  const [user, setUser] = useState<UserData | null>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then(setUser)
-      .catch(() => setUser(null));
-  }, []);
+  const { data: user } = useSWR("/api/auth/me", userFetcher, {
+    revalidateOnFocus: false,
+  });
 
   const handleSignOut = () => {
     startTransition(async () => {
       await fetch("/api/auth/signout", { method: "POST" });
       window.location.href = "/sign-in";
     });
+  };
+
+  const preloadEditor = () => {
+    if (typeof window !== "undefined") {
+      void import("./Editor");
+    }
   };
 
   const initials = user?.name
@@ -69,10 +76,18 @@ export default function Toolbar({
       </div>
 
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={onRun} disabled={isRunning}>
+        <Button
+          size="sm"
+          onClick={onRun}
+          onMouseEnter={preloadEditor}
+          onFocus={preloadEditor}
+          disabled={isRunning}
+        >
           {isRunning ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <span className="animate-spin">
+                <Loader2 className="size-4" />
+              </span>
               Running...
             </>
           ) : (
@@ -108,7 +123,9 @@ export default function Toolbar({
           <DropdownMenuContent align="end" sideOffset={8}>
             <DropdownMenuItem onClick={handleSignOut} disabled={isPending}>
               {isPending ? (
-                <Loader2 className="size-4 animate-spin" />
+                <span className="animate-spin">
+                  <Loader2 className="size-4" />
+                </span>
               ) : (
                 <LogOut className="size-4" />
               )}

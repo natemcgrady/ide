@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useTransition } from "react";
 import dynamic from "next/dynamic";
 import type { Language } from "@/lib/executor";
 import Console from "./Console";
@@ -25,11 +25,11 @@ interface ExecutionResult {
 }
 
 export default function IDE() {
+  const [isPending, startTransition] = useTransition();
   const [language, setLanguage] = useState<Language>("python");
   const [code, setCode] = useState<string>(languageTemplates.python);
   const [output, setOutput] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [isRunning, setIsRunning] = useState<boolean>(false);
   const [executionTime, setExecutionTime] = useState<number | undefined>(
     undefined,
   );
@@ -47,32 +47,35 @@ export default function IDE() {
     setCode(value || "");
   }, []);
 
-  const handleRun = useCallback(async () => {
-    setIsRunning(true);
-    setOutput("");
-    setError("");
-    setExecutionTime(undefined);
+  const handleRun = useCallback(() => {
+    if (isPending) return;
+    startTransition(async () => {
+      setOutput("");
+      setError("");
+      setExecutionTime(undefined);
 
-    try {
-      const response = await fetch("/api/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ code, language }),
-      });
+      try {
+        const response = await fetch("/api/execute", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code, language }),
+        });
 
-      const result: ExecutionResult = await response.json();
+        const result: ExecutionResult = await response.json();
 
-      setOutput(result.output);
-      setError(result.error);
-      setExecutionTime(result.executionTime);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to execute code");
-    } finally {
-      setIsRunning(false);
-    }
-  }, [code, language]);
+        startTransition(() => {
+          setOutput(result.output);
+          setError(result.error);
+          setExecutionTime(result.executionTime);
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to execute code";
+        startTransition(() => setError(message));
+      }
+    });
+  }, [code, language, isPending]);
 
   const handleClear = useCallback(() => {
     setOutput("");
@@ -86,7 +89,7 @@ export default function IDE() {
         language={language}
         onLanguageChange={handleLanguageChange}
         onRun={handleRun}
-        isRunning={isRunning}
+        isRunning={isPending}
       />
 
       <div className="grid min-h-0 flex-1 grid-rows-[6fr_4fr]">
@@ -103,7 +106,7 @@ export default function IDE() {
           <Console
             output={output}
             error={error}
-            isRunning={isRunning}
+            isRunning={isPending}
             executionTime={executionTime}
             onClear={handleClear}
           />

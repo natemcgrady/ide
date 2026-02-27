@@ -1,6 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, lazy, Suspense } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  lazy,
+  Suspense,
+  useMemo,
+  useTransition,
+} from "react";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Console from "@/components/Console";
 import { AppSidebar } from "@/components/app-sidebar";
 import type { CollaboratorPresence } from "@/components/CollaborativeEditor";
@@ -21,6 +35,14 @@ import {
 } from "@/components/ui/sidebar";
 import { Loader2, Play, Share2 } from "lucide-react";
 import { inferLanguageFromTitle } from "@/lib/languages";
+import { queryKeys } from "@/lib/queries/keys";
+import {
+  createProjectFile,
+  deleteProjectFile,
+  fetchProjectFiles,
+  type ProjectFile,
+  updateProjectFile,
+} from "@/lib/queries/projects";
 
 const CollaborativeEditor = lazy(() => import("@/components/CollaborativeEditor"));
 
@@ -53,12 +75,6 @@ interface CurrentUserInfo {
   avatar: string | null;
 }
 
-interface ProjectFile {
-  id: string;
-  title: string;
-  contentText: string;
-}
-
 interface IDEWithProjectProps {
   projectId: string;
   initialProjectName: string;
@@ -66,6 +82,8 @@ interface IDEWithProjectProps {
   canWrite: boolean;
   currentUser: CurrentUserInfo;
 }
+
+const MAX_CACHED_EDITORS = 5;
 
 function getUniqueUntitledFileName(files: ProjectFile[]): string {
   const existing = new Set(files.map((file) => file.title.toLowerCase()));
@@ -90,40 +108,252 @@ export default function IDEWithProject({
   const [editorMounted, setEditorMounted] = useState(false);
   useEffect(() => setEditorMounted(true), []);
 
+  const queryClient = useQueryClient();
+  const filesQueryKey = queryKeys.projects.files(projectId);
+  const { data: files = initialFiles } = useQuery({
+    queryKey: filesQueryKey,
+    queryFn: () => fetchProjectFiles(projectId),
+    initialData: initialFiles,
+    staleTime: 30_000,
+  });
+
   const [isRunning, setIsRunning] = useState(false);
   const [projectName] = useState<string>(initialProjectName);
-  const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [activeFileId, setActiveFileId] = useState<string | null>(
-    initialFiles[0]?.id ?? null
+    initialFiles[0]?.id ?? null,
   );
-  const activeFile = files.find((file) => file.id === activeFileId) ?? null;
+  const [visibleFileId, setVisibleFileId] = useState<string | null>(
+    initialFiles[0]?.id ?? null,
+  );
+  const [isSwitchPending, startSelectionTransition] = useTransition();
+  const [mountedEditorFileIds, setMountedEditorFileIds] = useState<string[]>(
+    initialFiles[0]?.id ? [initialFiles[0].id] : [],
+  );
+  const [readyEditorFileIds, setReadyEditorFileIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [collaboratorsByFileId, setCollaboratorsByFileId] = useState<
+    Record<string, CollaboratorPresence[]>
+  >({});
+
+  const filesById = useMemo(
+    () => new Map(files.map((file) => [file.id, file])),
+    [files],
+  );
+  const activeFile = activeFileId ? (filesById.get(activeFileId) ?? null) : null;
+  const visibleFile = visibleFileId
+    ? (filesById.get(visibleFileId) ?? null)
+    : null;
+  const visibleCollaborators = visibleFileId
+    ? (collaboratorsByFileId[visibleFileId] ?? [])
+    : [];
+  const isSwitchingFile =
+    Boolean(activeFileId) && activeFileId !== visibleFileId;
 
   const [output, setOutput] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [executionTime, setExecutionTime] = useState<number | undefined>(
-    undefined
-  );
-  const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>(
-    []
+    undefined,
   );
   const [shareOpen, setShareOpen] = useState(false);
-  const getCodeRef = useRef<(() => string) | null>(null);
+  const codeRefByFileId = useRef<
+    Map<string, React.MutableRefObject<(() => string) | null>>
+  >(new Map());
   const eventSourceRef = useRef<EventSource | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const lastEventIdRef = useRef(0);
   const reconnectAttemptsRef = useRef(0);
   const userCancelledRef = useRef(false);
   const canEditFiles = Boolean(projectId && canWrite);
-  const selfCollaborator = collaborators.find((c) => c.isSelf);
-  const hasOtherCollaborators = collaborators.some((c) => !c.isSelf);
+  const selfCollaborator = visibleCollaborators.find((c) => c.isSelf);
+  const hasOtherCollaborators = visibleCollaborators.some((c) => !c.isSelf);
   const userAvatarCollabColor =
-    activeFileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
-  const otherCollaborators = collaborators.filter((c) => !c.isSelf);
-  const showCollabGroup = Boolean(activeFileId && canWrite);
+    visibleFileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
+  const otherCollaborators = visibleCollaborators.filter((c) => !c.isSelf);
+  const showCollabGroup = Boolean(visibleFileId && canWrite);
+
+  const getCodeRefForFile = useCallback((fileId: string) => {
+    const existing = codeRefByFileId.current.get(fileId);
+    if (existing) {
+      return existing;
+    }
+    const next: React.MutableRefObject<(() => string) | null> = {
+      current: null,
+    };
+    codeRefByFileId.current.set(fileId, next);
+    return next;
+  }, []);
+
+  const mountEditorSession = useCallback(
+    (fileId: string) => {
+      setMountedEditorFileIds((current) => {
+        if (current.includes(fileId)) {
+          return current;
+        }
+        const next = [...current, fileId];
+        if (next.length <= MAX_CACHED_EDITORS) {
+          return next;
+        }
+        const removableId = next.find(
+          (id) => id !== fileId && id !== visibleFileId,
+        );
+        if (!removableId) {
+          return next;
+        }
+        return next.filter((id) => id !== removableId);
+      });
+    },
+    [visibleFileId],
+  );
+
+  const createFileMutation = useMutation({
+    mutationFn: (nextFileName: string) =>
+      createProjectFile(projectId, {
+        title: nextFileName,
+        contentText: "",
+      }),
+    onSuccess: (file) => {
+      queryClient.setQueryData<ProjectFile[]>(filesQueryKey, (current = []) => [
+        file,
+        ...current.filter((entry) => entry.id !== file.id),
+      ]);
+      setActiveFileId(file.id);
+      mountEditorSession(file.id);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: filesQueryKey });
+    },
+  });
+
+  const renameFileMutation = useMutation({
+    mutationFn: ({ fileId, newTitle }: { fileId: string; newTitle: string }) =>
+      updateProjectFile(fileId, { title: newTitle }),
+    onMutate: async ({ fileId, newTitle }) => {
+      await queryClient.cancelQueries({ queryKey: filesQueryKey });
+      const previous = queryClient.getQueryData<ProjectFile[]>(filesQueryKey) ?? [];
+      queryClient.setQueryData<ProjectFile[]>(filesQueryKey, (current = []) =>
+        current.map((file) =>
+          file.id === fileId ? { ...file, title: newTitle } : file,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(filesQueryKey, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: filesQueryKey });
+    },
+  });
+
+  const deleteFileMutation = useMutation({
+    mutationFn: (fileId: string) => deleteProjectFile(fileId),
+    onMutate: async (fileId) => {
+      await queryClient.cancelQueries({ queryKey: filesQueryKey });
+      const previous = queryClient.getQueryData<ProjectFile[]>(filesQueryKey) ?? [];
+      const deletedIndex = previous.findIndex((file) => file.id === fileId);
+      const remaining = previous.filter((file) => file.id !== fileId);
+
+      queryClient.setQueryData<ProjectFile[]>(filesQueryKey, remaining);
+      setMountedEditorFileIds((current) => current.filter((id) => id !== fileId));
+      setReadyEditorFileIds((current) => {
+        if (!(fileId in current)) return current;
+        const { [fileId]: _removed, ...rest } = current;
+        return rest;
+      });
+      setCollaboratorsByFileId((current) => {
+        if (!(fileId in current)) return current;
+        const { [fileId]: _removed, ...rest } = current;
+        return rest;
+      });
+      codeRefByFileId.current.delete(fileId);
+
+      const fallbackIndex = Math.max(0, Math.min(deletedIndex, remaining.length - 1));
+      const fallbackFileId = remaining[fallbackIndex]?.id ?? null;
+
+      if (activeFileId === fileId) {
+        setActiveFileId(fallbackFileId);
+      }
+      if (visibleFileId === fileId) {
+        setVisibleFileId(fallbackFileId);
+      }
+
+      return {
+        previous,
+        deletedFileId: fileId,
+        activeBeforeDelete: activeFileId,
+        visibleBeforeDelete: visibleFileId,
+      };
+    },
+    onError: (_error, _fileId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(filesQueryKey, context.previous);
+        const restored = context.previous.find(
+          (file) => file.id === context.deletedFileId,
+        );
+        if (restored) {
+          mountEditorSession(restored.id);
+        }
+        setActiveFileId(context.activeBeforeDelete ?? null);
+        setVisibleFileId(context.visibleBeforeDelete ?? null);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: filesQueryKey });
+    },
+  });
 
   useEffect(() => {
-    setCollaborators([]);
-  }, [activeFileId]);
+    const existingIds = new Set(files.map((file) => file.id));
+
+    setMountedEditorFileIds((current) =>
+      current.filter((fileId) => existingIds.has(fileId)),
+    );
+    setReadyEditorFileIds((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([fileId]) => existingIds.has(fileId)),
+      ),
+    );
+    setCollaboratorsByFileId((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([fileId]) => existingIds.has(fileId)),
+      ),
+    );
+    for (const fileId of Array.from(codeRefByFileId.current.keys())) {
+      if (!existingIds.has(fileId)) {
+        codeRefByFileId.current.delete(fileId);
+      }
+    }
+
+    if (!activeFileId && files[0]?.id) {
+      setActiveFileId(files[0].id);
+    } else if (activeFileId && !existingIds.has(activeFileId)) {
+      const fallbackFileId = files[0]?.id ?? null;
+      setActiveFileId(fallbackFileId);
+      setVisibleFileId(fallbackFileId);
+    }
+
+    if (!visibleFileId && files[0]?.id) {
+      setVisibleFileId(files[0].id);
+    } else if (visibleFileId && !existingIds.has(visibleFileId)) {
+      const fallbackFileId =
+        activeFileId && existingIds.has(activeFileId)
+          ? activeFileId
+          : (files[0]?.id ?? null);
+      setVisibleFileId(fallbackFileId);
+    }
+  }, [activeFileId, files, visibleFileId]);
+
+  useEffect(() => {
+    if (activeFileId) {
+      mountEditorSession(activeFileId);
+      if (readyEditorFileIds[activeFileId]) {
+        setVisibleFileId(activeFileId);
+      }
+    }
+  }, [activeFileId, mountEditorSession, readyEditorFileIds]);
 
   const closeStream = useCallback(() => {
     if (eventSourceRef.current) {
@@ -132,92 +362,66 @@ export default function IDEWithProject({
     }
   }, []);
 
-  const handleSelectFile = useCallback((fileId: string) => {
-    setActiveFileId(fileId);
-    setOutput("");
-    setError("");
-    setExecutionTime(undefined);
-  }, []);
-
-  const handleTitleChange = useCallback(
-    async (fileId: string, newTitle: string) => {
-      const previousFiles = files;
-      setFiles((current) =>
-        current.map((file) =>
-          file.id === fileId ? { ...file, title: newTitle } : file
-        )
-      );
-      try {
-        await fetch(`/api/files/${fileId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: newTitle }),
+  const handleSelectFile = useCallback(
+    (fileId: string) => {
+      setActiveFileId(fileId);
+      mountEditorSession(fileId);
+      if (readyEditorFileIds[fileId]) {
+        startSelectionTransition(() => {
+          setVisibleFileId(fileId);
         });
-      } catch {
-        setFiles(previousFiles);
       }
+      setOutput("");
+      setError("");
+      setExecutionTime(undefined);
     },
-    [files]
+    [mountEditorSession, readyEditorFileIds, startSelectionTransition],
   );
 
-  const handleCreateFile = useCallback(async () => {
+  const handleTitleChange = useCallback((fileId: string, newTitle: string) => {
+    renameFileMutation.mutate({ fileId, newTitle });
+  }, [renameFileMutation]);
+
+  const handleCreateFile = useCallback(() => {
     if (!canWrite) return;
     const nextFileName = getUniqueUntitledFileName(files);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/files`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: nextFileName,
-          contentText: "",
-        }),
-      });
-      if (!response.ok) {
-        return;
-      }
-      const file = (await response.json()) as ProjectFile;
-      setFiles((current) => [file, ...current]);
-      setActiveFileId(file.id);
-    } catch {
-      // Ignore create errors to keep UX responsive.
-    }
-  }, [canWrite, files, projectId]);
+    createFileMutation.mutate(nextFileName);
+  }, [canWrite, createFileMutation, files]);
 
-  const handleDeleteFile = useCallback(
-    async (fileId: string) => {
-      if (!canWrite) return;
-      const previousFiles = files;
-      const deletedIndex = files.findIndex((file) => file.id === fileId);
-      const remainingFiles = files.filter((file) => file.id !== fileId);
-      setFiles(remainingFiles);
-
-      if (activeFileId === fileId) {
-        const fallbackIndex = Math.max(0, Math.min(deletedIndex, remainingFiles.length - 1));
-        setActiveFileId(remainingFiles[fallbackIndex]?.id ?? null);
-      }
-
-      try {
-        const response = await fetch(`/api/files/${fileId}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) {
-          throw new Error("Failed to delete file");
-        }
-      } catch {
-        setFiles(previousFiles);
-        if (activeFileId === fileId) {
-          setActiveFileId(fileId);
-        }
-      }
-    },
-    [activeFileId, canWrite, files]
-  );
+  const handleDeleteFile = useCallback((fileId: string) => {
+    if (!canWrite) return;
+    deleteFileMutation.mutate(fileId);
+  }, [canWrite, deleteFileMutation]);
 
   const preloadEditor = useCallback(() => {
     if (typeof window !== "undefined") {
-      void import("@/components/Editor");
+      void import("@/components/CollaborativeEditor");
     }
   }, []);
+
+  const handleEditorReady = useCallback(
+    (fileId: string) => {
+      setReadyEditorFileIds((current) =>
+        current[fileId] ? current : { ...current, [fileId]: true },
+      );
+      if (activeFileId === fileId) {
+        startSelectionTransition(() => {
+          setVisibleFileId(fileId);
+        });
+      }
+    },
+    [activeFileId, startSelectionTransition],
+  );
+
+  const handlePresenceChange = useCallback(
+    (fileId: string, users: CollaboratorPresence[]) => {
+      setCollaboratorsByFileId((current) => ({
+        ...current,
+        [fileId]: users,
+      }));
+    },
+    [],
+  );
 
   const connectToRunEvents = useCallback(
     (runId: string, cursor: number) => {
@@ -297,9 +501,11 @@ export default function IDEWithProject({
   );
 
   const handleRun = useCallback(() => {
-    if (isRunning || !activeFile) return;
-    const code = getCodeRef.current?.() ?? activeFile.contentText;
-    const language = inferLanguageFromTitle(activeFile.title);
+    if (isRunning || !visibleFile || isSwitchingFile) return;
+    const code =
+      codeRefByFileId.current.get(visibleFile.id)?.current?.() ??
+      visibleFile.contentText;
+    const language = inferLanguageFromTitle(visibleFile.title);
     userCancelledRef.current = false;
     closeStream();
     setOutput("");
@@ -333,7 +539,7 @@ export default function IDEWithProject({
         setError(message);
       }
     })();
-  }, [activeFile, closeStream, connectToRunEvents, isRunning]);
+  }, [closeStream, connectToRunEvents, isRunning, isSwitchingFile, visibleFile]);
 
   const handleCancel = useCallback(() => {
     const runId = activeRunIdRef.current;
@@ -426,6 +632,12 @@ export default function IDEWithProject({
           <span className="min-w-0 max-w-64 truncate font-semibold text-foreground">
             {activeFile?.title ?? "No file selected"}
           </span>
+          {isSwitchingFile ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              Opening…
+            </span>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             {showCollabGroup && (
               <AvatarGroup aria-label="Active collaborators">
@@ -469,7 +681,7 @@ export default function IDEWithProject({
                 size="sm"
                 variant="destructive"
                 onClick={handleCancel}
-                disabled={!handleCancel || !activeFile}
+                disabled={!handleCancel || !visibleFile || isSwitchingFile}
               >
                 <Loader2 className="size-4 animate-spin" />
                 Cancel
@@ -480,7 +692,7 @@ export default function IDEWithProject({
                 onClick={handleRun}
                 onMouseEnter={preloadEditor}
                 onFocus={preloadEditor}
-                disabled={!activeFile}
+                disabled={!visibleFile || isSwitchingFile || isSwitchPending}
               >
                 <Play className="size-4" />
                 Run
@@ -497,17 +709,34 @@ export default function IDEWithProject({
               </div>
             ) : editorMounted ? (
               <Suspense fallback={<EditorLoading />}>
-                <CollaborativeEditor
-                  key={activeFile.id}
-                  fileId={activeFile.id}
-                  fileTitle={activeFile.title}
-                  initialCode={activeFile.contentText}
-                  onRun={handleRun}
-                  readOnly={!canWrite}
-                  onPresenceChange={setCollaborators}
-                  getCodeRef={getCodeRef}
-                  currentUser={currentUser}
-                />
+                <div className="relative h-full w-full">
+                  {mountedEditorFileIds.map((fileId) => {
+                    const file = filesById.get(fileId);
+                    if (!file) return null;
+                    const isVisible = fileId === visibleFileId;
+                    return (
+                      <div
+                        key={file.id}
+                        className={isVisible ? "h-full w-full" : "hidden h-full w-full"}
+                        aria-hidden={!isVisible}
+                      >
+                        <CollaborativeEditor
+                          fileId={file.id}
+                          fileTitle={file.title}
+                          initialCode={file.contentText}
+                          onRun={handleRun}
+                          readOnly={!canWrite}
+                          onPresenceChange={(users) =>
+                            handlePresenceChange(file.id, users)
+                          }
+                          onReady={handleEditorReady}
+                          getCodeRef={getCodeRefForFile(file.id)}
+                          currentUser={currentUser}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </Suspense>
             ) : (
               <EditorLoading />

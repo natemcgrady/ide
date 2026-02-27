@@ -44,6 +44,7 @@ interface CollaborativeEditorProps {
   onRun: () => void;
   readOnly: boolean;
   onPresenceChange?: (users: CollaboratorPresence[]) => void;
+  onReady?: (fileId: string) => void;
   getCodeRef?: React.MutableRefObject<(() => string) | null>;
   currentUser: CurrentUserInfo;
 }
@@ -55,6 +56,7 @@ export default function CollaborativeEditor({
   onRun,
   readOnly,
   onPresenceChange,
+  onReady,
   getCodeRef,
   currentUser,
 }: CollaborativeEditorProps) {
@@ -71,8 +73,18 @@ export default function CollaborativeEditor({
   const awarenessDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorStylesRef = useRef<HTMLStyleElement | null>(null);
+  const onPresenceChangeRef = useRef(onPresenceChange);
+  const onReadyRef = useRef(onReady);
 
   const language = inferLanguageFromTitle(fileTitle);
+
+  useEffect(() => {
+    onPresenceChangeRef.current = onPresenceChange;
+  }, [onPresenceChange]);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   // Debounced save to Neon — write users only. The PATCH endpoint also
   // enforces write-access server-side.
@@ -225,7 +237,8 @@ export default function CollaborativeEditor({
     const handleAwarenessChange = () => {
       if (!mounted) return;
       updateCursorStyles();
-      if (!onPresenceChange) return;
+      const emitPresence = onPresenceChangeRef.current;
+      if (!emitPresence) return;
       const users: CollaboratorPresence[] = [];
       const states = provider.awareness.getStates();
       const localClientId = ydoc.clientID;
@@ -245,7 +258,7 @@ export default function CollaborativeEditor({
         });
       });
 
-      onPresenceChange(users);
+      emitPresence(users);
     };
 
     updateCursorStyles();
@@ -258,6 +271,7 @@ export default function CollaborativeEditor({
         ytext.insert(0, initialCode);
       }
       setStatus("ready");
+      onReadyRef.current?.(fileId);
     };
 
     // LiveblocksYjsProvider emits "synced" and "sync" events (lib0 Observable).
@@ -297,7 +311,13 @@ export default function CollaborativeEditor({
       setEditorReady(false);
       setStatus("loading");
     };
-  }, [fileId, initialCode, readOnly, onPresenceChange, debouncedSave, currentUser]);
+  }, [
+    fileId,
+    initialCode,
+    readOnly,
+    debouncedSave,
+    currentUser,
+  ]);
 
   const handleMount = useCallback(
     (editor: Monaco.editor.IStandaloneCodeEditor) => {

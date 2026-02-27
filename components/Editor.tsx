@@ -40,6 +40,7 @@ export default function Editor({ code, language, onChange, onRun }: EditorProps)
           scrollBeyondLastLine: false,
           automaticLayout: true,
           tabSize: 2,
+          padding: { top: 16, bottom: 16 },
         }}
       />
     </div>

@@ -16,7 +16,7 @@ const CollaborativeEditor = dynamic(
         <span className="text-sm text-muted-foreground">Loading editor...</span>
       </div>
     ),
-  }
+  },
 );
 
 interface ExecutionResult {
@@ -57,9 +57,11 @@ export default function IDEWithFile({
   const [output, setOutput] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [executionTime, setExecutionTime] = useState<number | undefined>(
-    undefined
+    undefined,
   );
-  const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>([]);
+  const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>(
+    [],
+  );
   const getCodeRef = useRef<(() => string) | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
@@ -88,7 +90,7 @@ export default function IDEWithFile({
         setFileTitle(previousTitle);
       }
     },
-    [fileId, fileTitle]
+    [fileId, fileTitle],
   );
 
   const handleLanguageChange = useCallback((newLanguage: Language) => {
@@ -103,7 +105,9 @@ export default function IDEWithFile({
       const params = new URLSearchParams();
       if (cursor > 0) params.set("cursor", String(cursor));
       const qs = params.toString();
-      const url = qs ? `/api/runs/${runId}/events?${qs}` : `/api/runs/${runId}/events`;
+      const url = qs
+        ? `/api/runs/${runId}/events?${qs}`
+        : `/api/runs/${runId}/events`;
       const source = new EventSource(url);
       eventSourceRef.current = source;
 
@@ -170,7 +174,7 @@ export default function IDEWithFile({
         }, 600);
       };
     },
-    [closeStream, isRunning]
+    [closeStream, isRunning],
   );
 
   const handleRun = useCallback(() => {
@@ -193,9 +197,9 @@ export default function IDEWithFile({
           body: JSON.stringify({ code, language }),
         });
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const body = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(body?.error ?? "Failed to start execution");
         }
         const data = (await response.json()) as { runId: string };
@@ -241,6 +245,55 @@ export default function IDEWithFile({
     }
   }, [fileId]);
 
+  const CONSOLE_MIN_HEIGHT = 120;
+  const CONSOLE_DEFAULT_HEIGHT = 280;
+  const CONSOLE_MAX_HEIGHT = 600;
+
+  const [consoleHeight, setConsoleHeight] = useState(CONSOLE_DEFAULT_HEIGHT);
+  const isResizingRef = useRef(false);
+  const lastYRef = useRef(0);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    lastYRef.current = e.clientY;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setConsoleHeight(CONSOLE_DEFAULT_HEIGHT);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = lastYRef.current - e.clientY;
+      lastYRef.current = e.clientY;
+      setConsoleHeight((h) =>
+        Math.max(
+          CONSOLE_MIN_HEIGHT,
+          Math.min(CONSOLE_MAX_HEIGHT, Math.round(h + delta)),
+        ),
+      );
+    };
+
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   return (
     <div className="flex h-screen flex-col bg-background">
       <Toolbar
@@ -257,8 +310,8 @@ export default function IDEWithFile({
         collaborators={collaborators}
       />
 
-      <div className="grid min-h-0 flex-1 grid-rows-[6fr_4fr]">
-        <div className="min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <CollaborativeEditor
             fileId={fileId}
             language={language}
@@ -270,7 +323,21 @@ export default function IDEWithFile({
           />
         </div>
 
-        <div className="min-h-0 overflow-hidden">
+        <div
+          role="separator"
+          aria-label="Resize console"
+          className="flex shrink-0 cursor-ns-resize select-none items-center justify-center border-t border-border py-1"
+          style={{ minHeight: 10 }}
+          onMouseDown={handleResizeMouseDown}
+          onDoubleClick={handleResizeDoubleClick}
+        >
+          <div className="h-px w-12 rounded-full bg-muted-foreground" />
+        </div>
+
+        <div
+          className="shrink-0 overflow-hidden"
+          style={{ height: consoleHeight, minHeight: CONSOLE_MIN_HEIGHT }}
+        >
           <Console
             output={output}
             error={error}

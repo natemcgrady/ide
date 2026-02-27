@@ -39,7 +39,7 @@ const languageConfigs: Record<Language, LanguageConfig> = {
   },
 };
 
-const EXECUTION_TIMEOUT = 10000; // 10 seconds
+const EXECUTION_TIMEOUT = 60000; // 1 minute
 const PYTHON_SANDBOX_TIMEOUT = 120000; // 2 minutes
 const PYTHON_INSTALL_TIMEOUT = 60000; // 1 minute
 const SANDBOX_WORKDIR = '/vercel/sandbox';

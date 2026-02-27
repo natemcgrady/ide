@@ -45,7 +45,7 @@ export default async function Home() {
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
             IDE
           </h1>
-          <Link href="/new">
+          <Link href="/new" prefetch={false}>
             <Button size="sm">
               <FilePlus className="mr-2 size-4" />
               Create New File
@@ -61,7 +61,7 @@ export default async function Home() {
             <p className="text-sm text-muted-foreground">
               Create your first file to get started
             </p>
-            <Link href="/new">
+            <Link href="/new" prefetch={false}>
               <Button>
                 <FilePlus className="mr-2 size-4" />
                 Create New File

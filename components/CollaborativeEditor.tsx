@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type * as Monaco from "monaco-editor";
+import * as Monaco from "monaco-editor";
 import * as Y from "yjs";
 import type { Awareness as YAwareness } from "y-protocols/awareness";
 import { createClient } from "@liveblocks/client";
@@ -48,7 +48,7 @@ export default function CollaborativeEditor({
   getCodeRef,
 }: CollaborativeEditorProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   // Expose provider + ydoc to handleMount via state (triggers re-render that
   // makes the editor appear, so handleMount is called after refs are set).
@@ -57,6 +57,7 @@ export default function CollaborativeEditor({
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<LiveblocksYjsProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const awarenessDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorStylesRef = useRef<HTMLStyleElement | null>(null);
 
@@ -78,7 +79,7 @@ export default function CollaborativeEditor({
         }
       }, 2000);
     },
-    [fileId, readOnly]
+    [fileId, readOnly],
   );
 
   useEffect(() => {
@@ -143,8 +144,7 @@ export default function CollaborativeEditor({
         rules.push(
           `.yRemoteSelection-${clientId}{--y-color:${color};background-color:color-mix(in srgb, ${color} 25%, transparent);}`,
           `.yRemoteSelectionHead-${clientId}{--y-color:${color};border-color:${color};}`,
-          `.yRemoteSelectionHead-${clientId}::after{content:"${safeName}";background-color:${color};opacity:0;transform:translateY(-2px);transition:opacity 120ms ease, transform 120ms ease;}`,
-          `.yRemoteSelectionHead-${clientId}:hover::after{opacity:1;transform:translateY(0);}`
+          `.yRemoteSelectionHead-${clientId}::after{content:"${safeName}";background-color:${color};opacity:1;transform:translateY(0);}`,
         );
       });
 
@@ -156,7 +156,10 @@ export default function CollaborativeEditor({
     const syncSelfAwareness = () => {
       const self = room.getSelf();
       if (!self?.id || !mounted) return;
-      const info = self.info as { name?: string; avatar?: string | null } | null;
+      const info = self.info as {
+        name?: string;
+        avatar?: string | null;
+      } | null;
       const selfId: string = self.id;
       const name = info?.name ?? "Anonymous";
       const avatar = info?.avatar ?? null;
@@ -164,8 +167,10 @@ export default function CollaborativeEditor({
 
       // Merge with current state to avoid clobbering y-monaco selection updates.
       const currentState =
-        (provider.awareness.getLocalState() as Record<string, unknown> | null) ??
-        {};
+        (provider.awareness.getLocalState() as Record<
+          string,
+          unknown
+        > | null) ?? {};
       provider.awareness.setLocalState({
         ...currentState,
         userId: selfId,
@@ -203,7 +208,7 @@ export default function CollaborativeEditor({
           name: String(s.name ?? userObj?.name ?? "Anonymous"),
           avatar: typeof s.avatar === "string" ? s.avatar : null,
           color: String(
-            s.color ?? userObj?.color ?? hashToColor(String(s.userId))
+            s.color ?? userObj?.color ?? hashToColor(String(s.userId)),
           ),
         });
       });
@@ -224,10 +229,11 @@ export default function CollaborativeEditor({
     };
 
     // LiveblocksYjsProvider emits "synced" and "sync" events (lib0 Observable).
-    (provider as unknown as { on: (e: string, fn: (v: boolean) => void) => void }).on(
-      "synced",
-      handleSync
-    );
+    (
+      provider as unknown as {
+        on: (e: string, fn: (v: boolean) => void) => void;
+      }
+    ).on("synced", handleSync);
 
     // Debounced Neon save on every CRDT update (write users only).
     if (!readOnly) {
@@ -241,6 +247,10 @@ export default function CollaborativeEditor({
       unsubSelf();
       provider.awareness.off("change", handleAwarenessChange);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      for (const disposable of awarenessDisposablesRef.current) {
+        disposable.dispose();
+      }
+      awarenessDisposablesRef.current = [];
       bindingRef.current?.destroy();
       bindingRef.current = null;
       if (cursorStylesRef.current) {
@@ -274,15 +284,54 @@ export default function CollaborativeEditor({
         ytext,
         model,
         new Set([editor]),
-        provider.awareness as unknown as YAwareness
+        provider.awareness as unknown as YAwareness,
       );
       bindingRef.current = binding;
+
+      for (const disposable of awarenessDisposablesRef.current) {
+        disposable.dispose();
+      }
+      awarenessDisposablesRef.current = [];
+
+      const publishSelection = () => {
+        if (editor.getModel() !== model) return;
+        const sel = editor.getSelection();
+        if (!sel) return;
+        let anchor = model.getOffsetAt(sel.getStartPosition());
+        let head = model.getOffsetAt(sel.getEndPosition());
+        if (sel.getDirection() === Monaco.SelectionDirection.RTL) {
+          const tmp = anchor;
+          anchor = head;
+          head = tmp;
+        }
+        (
+          provider.awareness as unknown as {
+            setLocalStateField: (field: string, value: unknown) => void;
+          }
+        ).setLocalStateField("selection", {
+          anchor: Y.createRelativePositionFromTypeIndex(ytext, anchor),
+          head: Y.createRelativePositionFromTypeIndex(ytext, head),
+        });
+      };
+
+      const clearSelection = () => {
+        (
+          provider.awareness as unknown as {
+            setLocalStateField: (field: string, value: unknown) => void;
+          }
+        ).setLocalStateField("selection", null);
+      };
+
+      awarenessDisposablesRef.current = [
+        editor.onDidFocusEditorText(publishSelection),
+        editor.onDidBlurEditorText(clearSelection),
+      ];
 
       if (getCodeRef) {
         getCodeRef.current = () => ytext.toString();
       }
     },
-    [getCodeRef]
+    [getCodeRef],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

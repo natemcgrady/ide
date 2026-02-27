@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     const session = liveblocks.prepareSession(user.id, {
       userInfo: {
         name: user.name ?? user.username ?? "Anonymous",
+        username: user.username ?? undefined,
         avatar: user.avatarUrl ?? undefined,
       },
     });

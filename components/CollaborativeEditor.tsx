@@ -109,6 +109,39 @@ export default function CollaborativeEditor({
     const escapeCssString = (value: string) =>
       value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
+    const parsePresenceState = (
+      state: Record<string, unknown>,
+      clientId: number,
+    ) => {
+      const userObj =
+        typeof state.user === "object" && state.user !== null
+          ? (state.user as Record<string, unknown>)
+          : null;
+      const userId =
+        typeof state.userId === "string" && state.userId.length > 0
+          ? state.userId
+          : `client:${clientId}`;
+      const name =
+        typeof state.name === "string"
+          ? state.name
+          : typeof userObj?.name === "string"
+            ? userObj.name
+            : "Anonymous";
+      const avatar =
+        typeof state.avatar === "string" && state.avatar.length > 0
+          ? state.avatar
+          : typeof userObj?.avatar === "string" && userObj.avatar.length > 0
+            ? userObj.avatar
+            : null;
+      const color =
+        typeof state.color === "string" && state.color.length > 0
+          ? state.color
+          : typeof userObj?.color === "string" && userObj.color.length > 0
+            ? userObj.color
+            : hashToColor(userId);
+      return { userId, name, avatar, color };
+    };
+
     const updateCursorStyles = () => {
       if (!mounted) return;
       const styleEl = ensureCursorStylesElement();
@@ -119,28 +152,7 @@ export default function CollaborativeEditor({
       states.forEach((state, clientId) => {
         if (clientId === localClientId) return;
         const s = state as Record<string, unknown>;
-        const userObj =
-          typeof s.user === "object" && s.user !== null
-            ? (s.user as Record<string, unknown>)
-            : null;
-        const userId =
-          typeof s.userId === "string"
-            ? s.userId
-            : typeof userObj?.name === "string"
-              ? userObj.name
-              : String(clientId);
-        const name =
-          typeof s.name === "string"
-            ? s.name
-            : typeof userObj?.name === "string"
-              ? userObj.name
-              : "Anonymous";
-        const color =
-          typeof s.color === "string"
-            ? s.color
-            : typeof userObj?.color === "string"
-              ? userObj.color
-              : hashToColor(userId);
+        const { name, color } = parsePresenceState(s, clientId);
         const safeName = escapeCssString(name);
 
         rules.push(
@@ -160,10 +172,11 @@ export default function CollaborativeEditor({
       if (!self?.id || !mounted) return;
       const info = self.info as {
         name?: string;
+        username?: string;
         avatar?: string | null;
       } | null;
       const selfId: string = self.id;
-      const name = info?.name ?? "Anonymous";
+      const name = info?.name ?? info?.username ?? "Anonymous";
       const avatar = info?.avatar ?? null;
       const color = hashToColor(selfId);
 
@@ -179,7 +192,7 @@ export default function CollaborativeEditor({
         name,
         avatar,
         color,
-        user: { name, color },
+        user: { name, avatar, color },
       });
     };
 
@@ -199,33 +212,14 @@ export default function CollaborativeEditor({
       states.forEach((state, clientId) => {
         const s = state as Record<string, unknown>;
         const isLocal = clientId === localClientId;
-        const userObj =
-          typeof s.user === "object" && s.user !== null
-            ? (s.user as Record<string, unknown>)
-            : null;
-        const userId =
-          typeof s.userId === "string" && s.userId.length > 0
-            ? s.userId
-            : `client:${clientId}`;
-        const name =
-          typeof s.name === "string"
-            ? s.name
-            : typeof userObj?.name === "string"
-              ? userObj.name
-              : "Anonymous";
-        const color =
-          typeof s.color === "string"
-            ? s.color
-            : typeof userObj?.color === "string"
-              ? userObj.color
-              : hashToColor(userId);
+        const { userId, name, avatar, color } = parsePresenceState(s, clientId);
 
         users[isLocal ? "unshift" : "push"]({
           clientId: String(clientId),
           isSelf: isLocal,
           userId,
           name,
-          avatar: typeof s.avatar === "string" ? s.avatar : null,
+          avatar,
           color,
         });
       });

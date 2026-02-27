@@ -31,7 +31,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   const vercelUser = await response.json();
   const vercelSub = vercelUser.sub as string;
-  const avatarUrl = vercelUser.picture ? "/api/auth/avatar" : null;
+  const avatarUrl =
+    typeof vercelUser.picture === "string" ? vercelUser.picture : null;
 
   const user = await upsertUserByVercelSub({
     vercelSub,

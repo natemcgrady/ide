@@ -29,8 +29,6 @@ export default function Console({
     }
   }, [output, error]);
 
-  const hasContent = output || error;
-
   return (
     <div className="flex h-full flex-col border-t-2 border-muted-foreground/25 bg-background">
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2">
@@ -56,12 +54,6 @@ export default function Console({
 
       <ScrollArea className="flex-1">
         <div ref={outputRef} className="p-4 font-mono text-sm">
-          {!hasContent && !isRunning && (
-            <span className="text-muted-foreground/50">
-              Press Cmd/Ctrl + Enter or click Run to execute your code
-            </span>
-          )}
-
           {output && (
             <pre className="whitespace-pre-wrap text-foreground">{output}</pre>
           )}

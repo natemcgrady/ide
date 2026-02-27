@@ -43,6 +43,26 @@ Optional env vars:
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Database (Neon)
+
+The app uses Neon PostgreSQL for file persistence and collaborative editing. Add `DATABASE_URL` to `.env.local` and run migrations:
+
+```bash
+pnpm db:push   # Apply schema to database
+# or
+pnpm db:generate && pnpm db:migrate
+```
+
+## Real-time Collaboration
+
+Collaborative editing uses Yjs + Hocuspocus. Run the collab server (separate process):
+
+```bash
+pnpm collab
+```
+
+Set `COLLAB_SERVER_URL` and `COLLAB_JWT_SECRET` in `.env.local`. See [docs/E2E-CHECKLIST.md](docs/E2E-CHECKLIST.md) for manual testing.
+
 ## Deploy
 
-Deploy with Vercel and configure Sandbox credentials in project settings.
+Deploy with Vercel and configure Sandbox credentials in project settings. For collaboration, deploy the collab server separately (e.g. Railway, Render, or a long-running Node process).

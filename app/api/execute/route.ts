@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { executeCode, isValidLanguage } from "@/lib/executor";
 import { SUPPORTED_LANGUAGES } from "@/lib/languages";
+import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,32 +13,27 @@ interface ExecuteRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const [cookieStore, body] = await Promise.all([
-      cookies(),
-      request.json() as Promise<ExecuteRequest>,
-    ]);
+    await requireAuth();
+  } catch {
+    return NextResponse.json(
+      {
+        output: "",
+        error: "Unauthorized",
+        exitCode: 1,
+        executionTime: 0,
+      },
+      { status: 401 }
+    );
+  }
 
-    const accessToken = cookieStore.get("access_token")?.value;
+  try {
+    const body = (await request.json()) as ExecuteRequest;
+    const { code, language } = body ?? {};
 
-    if (!accessToken) {
-      return NextResponse.json(
-        {
-          output: "",
-          error: "Unauthorized",
-          exitCode: 1,
-          executionTime: 0,
-        },
-        { status: 401 },
-      );
-    }
-
-    const { code, language } = (body ?? {}) as ExecuteRequest;
-
-    // Validate input
     if (!code || typeof code !== "string") {
       return NextResponse.json(
         { error: "Code is required and must be a string" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -47,16 +42,14 @@ export async function POST(request: NextRequest) {
         {
           error: `Invalid language. Supported: ${SUPPORTED_LANGUAGES.join(", ")}`,
         },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
-    // Execute the code
     const result = await executeCode(code, language);
-
     return NextResponse.json(result);
   } catch (error) {
-    console.error('Execution error:', error);
+    console.error("Execution error:", error);
     return NextResponse.json(
       {
         output: "",
@@ -64,8 +57,7 @@ export async function POST(request: NextRequest) {
         exitCode: 1,
         executionTime: 0,
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useTransition, useState } from "react";
 import useSWR from "swr";
 import type { Language } from "@/lib/executor";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Play, Loader2, LogOut, User } from "lucide-react";
+import Link from "next/link";
+import { Play, Loader2, LogOut, User, ArrowLeft, Share2 } from "lucide-react";
+import ShareDialog from "./ShareDialog";
 
 interface UserData {
   id: string;
@@ -26,11 +28,22 @@ const userFetcher = async (url: string): Promise<UserData | null> => {
   return res.ok ? res.json() : null;
 };
 
+export interface CollaboratorPresence {
+  userId: string;
+  name: string;
+  avatar: string | null;
+  color: string;
+}
+
 interface ToolbarProps {
   language: Language;
   onLanguageChange: (language: Language) => void;
   onRun: () => void;
   isRunning: boolean;
+  fileId?: string;
+  fileTitle?: string;
+  canWrite?: boolean;
+  collaborators?: CollaboratorPresence[];
 }
 
 export default function Toolbar({
@@ -38,6 +51,10 @@ export default function Toolbar({
   onLanguageChange,
   onRun,
   isRunning,
+  fileId,
+  fileTitle,
+  canWrite = true,
+  collaborators = [],
 }: ToolbarProps) {
   const [isPending, startTransition] = useTransition();
   const { data: user } = useSWR("/api/auth/me", userFetcher, {
@@ -57,6 +74,8 @@ export default function Toolbar({
     }
   };
 
+  const [shareOpen, setShareOpen] = useState(false);
+
   const initials = user?.name
     ? user.name
         .split(" ")
@@ -69,13 +88,78 @@ export default function Toolbar({
   return (
     <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">
-          IDE
-        </h1>
-        <LanguageSelector language={language} onChange={onLanguageChange} />
+        {fileId ? (
+          <>
+            <Link
+              href="/files"
+              className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+              Back
+            </Link>
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">
+              {fileTitle || "Untitled"}
+            </h1>
+          </>
+        ) : (
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+            IDE
+          </h1>
+        )}
+        <LanguageSelector
+          language={language}
+          onChange={onLanguageChange}
+          disabled={!canWrite}
+        />
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        {collaborators.length > 0 && (
+          <div className="flex items-center gap-1" aria-label="Active collaborators">
+            {collaborators.map((c) => (
+              <div
+                key={c.userId}
+                className="relative"
+                title={`${c.name} (${c.color})`}
+              >
+                <div
+                  className="flex size-8 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-background"
+                  style={{
+                    borderColor: c.color,
+                    boxShadow: `0 0 0 2px ${c.color}`,
+                  }}
+                >
+                  {c.avatar ? (
+                    <img
+                      src={c.avatar}
+                      alt={c.name}
+                      className="size-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs font-medium text-muted-foreground"
+                      style={{ color: c.color }}
+                    >
+                      {c.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {fileId && canWrite && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShareOpen(true)}
+            aria-label="Share file"
+          >
+            <Share2 className="size-4" />
+            Share
+          </Button>
+        )}
         <Button
           size="sm"
           onClick={onRun}
@@ -133,6 +217,9 @@ export default function Toolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {shareOpen && fileId && (
+          <ShareDialog fileId={fileId} onClose={() => setShareOpen(false)} />
+        )}
       </div>
     </div>
   );

@@ -1,31 +1,18 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
+  const user = await getCurrentUser();
 
-  if (!accessToken) {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const response = await fetch("https://api.vercel.com/login/oauth/userinfo", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 401 });
-  }
-
-  const user = await response.json();
-
   return NextResponse.json({
-    id: user.sub,
-    name: user.name ?? null,
-    email: user.email ?? null,
-    username: user.preferred_username ?? null,
-    avatar: user.picture ? "/api/auth/avatar" : null,
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    avatar: user.avatarUrl,
   });
 }

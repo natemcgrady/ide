@@ -8,6 +8,7 @@ interface EditorProps {
   language: Language;
   onChange: (value: string | undefined) => void;
   onRun: () => void;
+  readOnly?: boolean;
 }
 
 const languageMap: Record<Language, string> = {
@@ -15,7 +16,7 @@ const languageMap: Record<Language, string> = {
   python: 'python',
 };
 
-export default function Editor({ code, language, onChange, onRun }: EditorProps) {
+export default function Editor({ code, language, onChange, onRun, readOnly }: EditorProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -41,6 +42,7 @@ export default function Editor({ code, language, onChange, onRun }: EditorProps)
           automaticLayout: true,
           tabSize: 2,
           padding: { top: 16, bottom: 16 },
+          readOnly: readOnly ?? false,
         }}
       />
     </div>

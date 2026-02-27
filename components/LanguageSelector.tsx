@@ -17,6 +17,7 @@ import {
 interface LanguageSelectorProps {
   language: Language;
   onChange: (language: Language) => void;
+  disabled?: boolean;
 }
 
 const languageLabels: Record<SupportedLanguage, string> = {
@@ -29,9 +30,13 @@ const languages: { value: Language; label: string }[] = SUPPORTED_LANGUAGES.map(
   label: languageLabels[value],
 }));
 
-export default function LanguageSelector({ language, onChange }: LanguageSelectorProps) {
+export default function LanguageSelector({ language, onChange, disabled }: LanguageSelectorProps) {
   return (
-    <Select value={language} onValueChange={(value) => onChange(value as Language)}>
+    <Select
+      value={language}
+      onValueChange={(value) => onChange(value as Language)}
+      disabled={disabled}
+    >
       <SelectTrigger className="w-[140px] border-border bg-secondary text-foreground transition-colors hover:bg-secondary/80 hover:border-muted-foreground/30 [&_svg]:opacity-100">
         <SelectValue placeholder="Select language">
           {language && isSupportedLanguage(language)

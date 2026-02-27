@@ -1,5 +1,10 @@
-import IDE from '@/components/IDE';
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 
-export default function Home() {
-  return <IDE />;
+export default async function Home() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/sign-in");
+  }
+  redirect("/files");
 }

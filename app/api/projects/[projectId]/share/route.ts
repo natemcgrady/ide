@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   requireAuth,
-  requireFileWriteAccess,
-  FileAccessError,
+  requireProjectWriteAccess,
+  AccessError,
 } from "@/lib/auth";
-import { getFileById } from "@/lib/db/queries/files";
+import { getProjectById } from "@/lib/db/queries/projects";
 import {
-  addCollaborator,
-  removeCollaborator,
-  updateCollaboratorPermission,
+  addProjectCollaborator,
+  removeProjectCollaborator,
+  updateProjectCollaboratorPermission,
 } from "@/lib/db/queries/collaborators";
 import { findUserByEmailOrUsername } from "@/lib/db/queries/users";
-import { z } from "zod";
 
 const inviteSchema = z.object({
   emailOrUsername: z.string().min(1),
@@ -29,19 +29,18 @@ const updatePermissionSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ fileId: string }> }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const user = await requireAuth();
-    const { fileId } = await params;
+    const { projectId } = await params;
+    await requireProjectWriteAccess(projectId, user);
 
-    await requireFileWriteAccess(fileId, user);
-
-    const file = await getFileById(fileId);
-    if (!file) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    const project = await getProjectById(projectId);
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-    if (file.ownerUserId !== user.id) {
+    if (project.ownerUserId !== user.id) {
       return NextResponse.json(
         { error: "Only the owner can invite collaborators" },
         { status: 403 }
@@ -77,8 +76,8 @@ export async function POST(
       );
     }
 
-    await addCollaborator({
-      fileId,
+    await addProjectCollaborator({
+      projectId,
       userId: invitedUser.id,
       permission: parsed.data.permission,
       invitedByUserId: user.id,
@@ -94,7 +93,7 @@ export async function POST(
       },
     });
   } catch (e) {
-    if (e instanceof FileAccessError) {
+    if (e instanceof AccessError) {
       return NextResponse.json({ error: e.message }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -103,19 +102,18 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ fileId: string }> }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const user = await requireAuth();
-    const { fileId } = await params;
+    const { projectId } = await params;
+    await requireProjectWriteAccess(projectId, user);
 
-    await requireFileWriteAccess(fileId, user);
-
-    const file = await getFileById(fileId);
-    if (!file) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    const project = await getProjectById(projectId);
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-    if (file.ownerUserId !== user.id) {
+    if (project.ownerUserId !== user.id) {
       return NextResponse.json(
         { error: "Only the owner can remove collaborators" },
         { status: 403 }
@@ -138,10 +136,10 @@ export async function DELETE(
       );
     }
 
-    await removeCollaborator(fileId, parsed.data.userId);
+    await removeProjectCollaborator(projectId, parsed.data.userId);
     return NextResponse.json({ success: true });
   } catch (e) {
-    if (e instanceof FileAccessError) {
+    if (e instanceof AccessError) {
       return NextResponse.json({ error: e.message }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -150,19 +148,18 @@ export async function DELETE(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ fileId: string }> }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const user = await requireAuth();
-    const { fileId } = await params;
+    const { projectId } = await params;
+    await requireProjectWriteAccess(projectId, user);
 
-    await requireFileWriteAccess(fileId, user);
-
-    const file = await getFileById(fileId);
-    if (!file) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    const project = await getProjectById(projectId);
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-    if (file.ownerUserId !== user.id) {
+    if (project.ownerUserId !== user.id) {
       return NextResponse.json(
         { error: "Only the owner can update permissions" },
         { status: 403 }
@@ -178,14 +175,14 @@ export async function PATCH(
       );
     }
 
-    await updateCollaboratorPermission(
-      fileId,
+    await updateProjectCollaboratorPermission(
+      projectId,
       parsed.data.userId,
       parsed.data.permission
     );
     return NextResponse.json({ success: true });
   } catch (e) {
-    if (e instanceof FileAccessError) {
+    if (e instanceof AccessError) {
       return NextResponse.json({ error: e.message }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

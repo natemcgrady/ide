@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Liveblocks } from "@liveblocks/node";
-import { requireAuth, requireFileReadAccess } from "@/lib/auth";
+import { requireAuth, requireFileReadAccess, AccessError } from "@/lib/auth";
 import { hasFileAccess } from "@/lib/db/queries/collaborators";
 
 const liveblocks = new Liveblocks({
@@ -54,7 +54,10 @@ export async function POST(request: NextRequest) {
       status,
       headers: { "Content-Type": "application/json" },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

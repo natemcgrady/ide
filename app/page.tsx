@@ -1,19 +1,16 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { FilePlus, FileCode } from "lucide-react";
+import { FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import FileListItem from "@/components/FileListItem";
-import { listFilesForUser, getCollaboratorCount } from "@/lib/db/queries/files";
+import ProjectListItem from "@/components/ProjectListItem";
+import {
+  getProjectCollaboratorCount,
+  getProjectFileCount,
+  listProjectsForUser,
+} from "@/lib/db/queries/projects";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(date));
-}
 
 export default async function Home() {
   const user = await getCurrentUser();
@@ -21,22 +18,24 @@ export default async function Home() {
     redirect("/sign-in");
   }
 
-  const { owned, shared } = await listFilesForUser(user.id);
+  const { owned, shared } = await listProjectsForUser(user.id);
 
   const ownedWithCount = await Promise.all(
-    owned.map(async (f) => ({
-      ...f,
-      collaboratorCount: await getCollaboratorCount(f.id),
+    owned.map(async (project) => ({
+      ...project,
+      fileCount: await getProjectFileCount(project.id),
+      collaboratorCount: await getProjectCollaboratorCount(project.id),
     })),
   );
   const sharedWithCount = await Promise.all(
-    shared.map(async (f) => ({
-      ...f,
-      collaboratorCount: await getCollaboratorCount(f.id),
+    shared.map(async (project) => ({
+      ...project,
+      fileCount: await getProjectFileCount(project.id),
+      collaboratorCount: await getProjectCollaboratorCount(project.id),
     })),
   );
 
-  const hasAnyFiles = ownedWithCount.length > 0 || sharedWithCount.length > 0;
+  const hasAnyProjects = ownedWithCount.length > 0 || sharedWithCount.length > 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,24 +46,24 @@ export default async function Home() {
           </h1>
           <Link href="/new" prefetch={false}>
             <Button size="sm">
-              <FilePlus className="mr-2 size-4" />
-              Create New File
+              <FolderPlus className="mr-2 size-4" />
+              Create New Project
             </Button>
           </Link>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8">
-        {!hasAnyFiles ? (
+        {!hasAnyProjects ? (
           <div className="flex flex-col items-center justify-center gap-6 rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="text-muted-foreground">No files yet</p>
+            <p className="text-muted-foreground">No projects yet</p>
             <p className="text-sm text-muted-foreground">
-              Create your first file to get started
+              Create your first project to get started
             </p>
             <Link href="/new" prefetch={false}>
               <Button>
-                <FilePlus className="mr-2 size-4" />
-                Create New File
+                <FolderPlus className="mr-2 size-4" />
+                Create New Project
               </Button>
             </Link>
           </div>
@@ -76,14 +75,14 @@ export default async function Home() {
                   Owned by you
                 </h2>
                 <ul className="space-y-2">
-                  {ownedWithCount.map((file) => (
-                    <FileListItem
-                      key={file.id}
-                      id={file.id}
-                      title={file.title ?? ""}
-                      language={file.language}
-                      lastEditedAt={file.lastEditedAt}
-                      collaboratorCount={file.collaboratorCount}
+                  {ownedWithCount.map((project) => (
+                    <ProjectListItem
+                      key={project.id}
+                      id={project.id}
+                      name={project.name ?? ""}
+                      lastEditedAt={project.lastEditedAt}
+                      fileCount={project.fileCount}
+                      collaboratorCount={project.collaboratorCount}
                       isOwner={true}
                     />
                   ))}
@@ -97,14 +96,14 @@ export default async function Home() {
                   Shared with you
                 </h2>
                 <ul className="space-y-2">
-                  {sharedWithCount.map((file) => (
-                    <FileListItem
-                      key={file.id}
-                      id={file.id}
-                      title={file.title ?? ""}
-                      language={file.language}
-                      lastEditedAt={file.lastEditedAt}
-                      collaboratorCount={file.collaboratorCount}
+                  {sharedWithCount.map((project) => (
+                    <ProjectListItem
+                      key={project.id}
+                      id={project.id}
+                      name={project.name ?? ""}
+                      lastEditedAt={project.lastEditedAt}
+                      fileCount={project.fileCount}
+                      collaboratorCount={project.collaboratorCount}
                       isOwner={false}
                     />
                   ))}

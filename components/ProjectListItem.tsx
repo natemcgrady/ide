@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { FileCode, Trash2, Loader2 } from "lucide-react";
+import { FolderCode, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,11 +13,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-interface FileListItemProps {
+interface ProjectListItemProps {
   id: string;
-  title: string;
-  language: string;
+  name: string;
   lastEditedAt: Date;
+  fileCount: number;
   collaboratorCount: number;
   isOwner: boolean;
 }
@@ -29,14 +29,14 @@ function formatDate(date: Date) {
   }).format(new Date(date));
 }
 
-export default function FileListItem({
+export default function ProjectListItem({
   id,
-  title,
-  language,
+  name,
   lastEditedAt,
+  fileCount,
   collaboratorCount,
   isOwner,
-}: FileListItemProps) {
+}: ProjectListItemProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
@@ -48,15 +48,14 @@ export default function FileListItem({
     setIsDeleted(true);
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/files/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
       if (!res.ok) {
         throw new Error("Delete request failed");
       }
     } catch {
-      // Roll back optimistic UI on failure.
       setIsDeleted(false);
       setDeleteOpen(true);
-      setDeleteError("Could not delete this file. Please try again.");
+      setDeleteError("Could not delete this project. Please try again.");
     } finally {
       setIsDeleting(false);
     }
@@ -73,20 +72,18 @@ export default function FileListItem({
         className="flex min-w-0 flex-1 items-center justify-between gap-4"
       >
         <div className="flex items-center gap-3">
-          <FileCode className="size-5 shrink-0 text-muted-foreground" />
+          <FolderCode className="size-5 shrink-0 text-muted-foreground" />
           <div>
             <span className="font-medium text-foreground">
-              {title || "Untitled"}
+              {name || "Untitled Project"}
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
-              {language}
+              {fileCount} files
             </span>
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          {collaboratorCount > 0 && (
-            <span>{collaboratorCount} shared</span>
-          )}
+          {collaboratorCount > 0 && <span>{collaboratorCount} shared</span>}
           <span>{formatDate(lastEditedAt)}</span>
         </div>
       </Link>
@@ -98,7 +95,7 @@ export default function FileListItem({
             e.preventDefault();
             setDeleteOpen(true);
           }}
-          aria-label="Delete file"
+          aria-label="Delete project"
           className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         >
           <Trash2 className="size-4" />
@@ -107,10 +104,10 @@ export default function FileListItem({
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete file?</DialogTitle>
+            <DialogTitle>Delete project?</DialogTitle>
             <DialogDescription>
-              This will permanently delete "{title || "Untitled"}". This action
-              cannot be undone.
+              This will permanently delete "{name || "Untitled Project"}" and
+              all files inside it. This action cannot be undone.
             </DialogDescription>
             {deleteError && (
               <p className="text-sm text-destructive">{deleteError}</p>

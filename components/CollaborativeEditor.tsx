@@ -8,10 +8,11 @@ import { createClient } from "@liveblocks/client";
 import { LiveblocksYjsProvider } from "@liveblocks/yjs";
 import { MonacoBinding } from "y-monaco";
 import MonacoEditor from "@monaco-editor/react";
-import type { Language } from "@/lib/executor";
 import { hashToColor } from "@/lib/collab/colors";
+import type { SupportedLanguage } from "@/lib/languages";
+import { inferLanguageFromTitle } from "@/lib/languages";
 
-const languageMap: Record<Language, string> = {
+const languageMap: Record<SupportedLanguage, string> = {
   typescript: "typescript",
   python: "python",
 };
@@ -38,7 +39,7 @@ interface CurrentUserInfo {
 
 interface CollaborativeEditorProps {
   fileId: string;
-  language: Language;
+  fileTitle: string;
   initialCode: string;
   onRun: () => void;
   readOnly: boolean;
@@ -49,7 +50,7 @@ interface CollaborativeEditorProps {
 
 export default function CollaborativeEditor({
   fileId,
-  language,
+  fileTitle,
   initialCode,
   onRun,
   readOnly,
@@ -70,6 +71,8 @@ export default function CollaborativeEditor({
   const awarenessDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorStylesRef = useRef<HTMLStyleElement | null>(null);
+
+  const language = inferLanguageFromTitle(fileTitle);
 
   // Debounced save to Neon — write users only. The PATCH endpoint also
   // enforces write-access server-side.

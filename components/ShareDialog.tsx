@@ -35,18 +35,18 @@ interface CollaboratorsResponse {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface ShareDialogProps {
-  fileId: string;
+  projectId: string;
   onClose: () => void;
 }
 
-export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
+export default function ShareDialog({ projectId, onClose }: ShareDialogProps) {
   const [emailOrUsername, setEmailOrUsername] = useState("");
   const [permission, setPermission] = useState<"read" | "write">("write");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   const { data, mutate } = useSWR<CollaboratorsResponse>(
-    `/api/files/${fileId}/collaborators`,
+    `/api/projects/${projectId}/collaborators`,
     fetcher
   );
 
@@ -55,7 +55,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
     setInviteError(null);
     setInviting(true);
     try {
-      const res = await fetch(`/api/files/${fileId}/share`, {
+      const res = await fetch(`/api/projects/${projectId}/share`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -76,7 +76,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
   };
 
   const handleRemove = async (userId: string) => {
-    const res = await fetch(`/api/files/${fileId}/share`, {
+    const res = await fetch(`/api/projects/${projectId}/share`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
@@ -88,7 +88,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
     userId: string,
     newPermission: "read" | "write"
   ) => {
-    const res = await fetch(`/api/files/${fileId}/share`, {
+    const res = await fetch(`/api/projects/${projectId}/share`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, permission: newPermission }),
@@ -100,7 +100,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Share file</DialogTitle>
+          <DialogTitle>Share project</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">

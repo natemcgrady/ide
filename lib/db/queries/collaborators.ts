@@ -1,46 +1,46 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../client";
-import { fileCollaborators, files, users } from "../schema";
+import { files, projectCollaborators, projects, users } from "../schema";
 
 export type CollaboratorPermissionType =
-  (typeof fileCollaborators.$inferSelect)["permission"];
+  (typeof projectCollaborators.$inferSelect)["permission"];
 
-export async function getFileCollaborators(fileId: string) {
+export async function getProjectCollaborators(projectId: string) {
   return db
     .select({
-      userId: fileCollaborators.userId,
-      permission: fileCollaborators.permission,
+      userId: projectCollaborators.userId,
+      permission: projectCollaborators.permission,
       userName: users.name,
       userEmail: users.email,
       userAvatarUrl: users.avatarUrl,
     })
-    .from(fileCollaborators)
-    .innerJoin(users, eq(users.id, fileCollaborators.userId))
-    .where(eq(fileCollaborators.fileId, fileId));
+    .from(projectCollaborators)
+    .innerJoin(users, eq(users.id, projectCollaborators.userId))
+    .where(eq(projectCollaborators.projectId, projectId));
 }
 
-export async function hasFileAccess(
-  fileId: string,
+export async function hasProjectAccess(
+  projectId: string,
   userId: string,
   requiredPermission: "read" | "write"
 ): Promise<boolean> {
-  const file = await db
-    .select({ ownerUserId: files.ownerUserId })
-    .from(files)
-    .where(eq(files.id, fileId))
+  const project = await db
+    .select({ ownerUserId: projects.ownerUserId, isDeleted: projects.isDeleted })
+    .from(projects)
+    .where(eq(projects.id, projectId))
     .limit(1);
 
-  const [f] = file;
-  if (!f) return false;
-  if (f.ownerUserId === userId) return true;
+  const [p] = project;
+  if (!p || p.isDeleted) return false;
+  if (p.ownerUserId === userId) return true;
 
   const [collab] = await db
-    .select({ permission: fileCollaborators.permission })
-    .from(fileCollaborators)
+    .select({ permission: projectCollaborators.permission })
+    .from(projectCollaborators)
     .where(
       and(
-        eq(fileCollaborators.fileId, fileId),
-        eq(fileCollaborators.userId, userId)
+        eq(projectCollaborators.projectId, projectId),
+        eq(projectCollaborators.userId, userId)
       )
     )
     .limit(1);
@@ -50,53 +50,74 @@ export async function hasFileAccess(
   return collab.permission === "write";
 }
 
-export async function addCollaborator(input: {
-  fileId: string;
+export async function hasFileAccess(
+  fileId: string,
+  userId: string,
+  requiredPermission: "read" | "write"
+): Promise<boolean> {
+  const [file] = await db
+    .select({
+      projectId: files.projectId,
+      isDeleted: files.isDeleted,
+    })
+    .from(files)
+    .where(eq(files.id, fileId))
+    .limit(1);
+
+  if (!file || file.isDeleted) {
+    return false;
+  }
+
+  return hasProjectAccess(file.projectId, userId, requiredPermission);
+}
+
+export async function addProjectCollaborator(input: {
+  projectId: string;
   userId: string;
   permission: CollaboratorPermissionType;
   invitedByUserId: string;
 }) {
   const [result] = await db
-    .insert(fileCollaborators)
+    .insert(projectCollaborators)
     .values({
-      fileId: input.fileId,
+      projectId: input.projectId,
       userId: input.userId,
       permission: input.permission,
       invitedByUserId: input.invitedByUserId,
     })
     .onConflictDoUpdate({
-      target: [fileCollaborators.fileId, fileCollaborators.userId],
+      target: [projectCollaborators.projectId, projectCollaborators.userId],
       set: { permission: input.permission },
     })
     .returning();
   return result ?? null;
 }
 
-export async function removeCollaborator(fileId: string, userId: string) {
+export async function removeProjectCollaborator(projectId: string, userId: string) {
   const [deleted] = await db
-    .delete(fileCollaborators)
+    .delete(projectCollaborators)
     .where(
       and(
-        eq(fileCollaborators.fileId, fileId),
-        eq(fileCollaborators.userId, userId)
+        eq(projectCollaborators.projectId, projectId),
+        eq(projectCollaborators.userId, userId)
       )
     )
     .returning();
   return deleted ?? null;
 }
 
-export async function updateCollaboratorPermission(
-  fileId: string,
+export async function updateProjectCollaboratorPermission(
+  projectId: string,
   userId: string,
   permission: CollaboratorPermissionType
 ) {
   const [updated] = await db
-    .update(fileCollaborators)
+    .update(projectCollaborators)
     .set({ permission })
     .where(
       and(
-        eq(fileCollaborators.fileId, fileId),
-        eq(fileCollaborators.userId, userId)
+        eq(projectCollaborators.projectId, projectId),
+        eq(projectCollaborators.userId, userId)
       )
     )
     .returning();

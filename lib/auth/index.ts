@@ -5,7 +5,9 @@ export {
   type CurrentUser,
 } from "./get-current-user";
 export {
+  requireProjectReadAccess,
+  requireProjectWriteAccess,
   requireFileReadAccess,
   requireFileWriteAccess,
-  FileAccessError,
-} from "./file-access";
+  AccessError,
+} from "./project-access";

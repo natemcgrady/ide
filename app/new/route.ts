@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { createFile } from "@/lib/db/queries/files";
+import { createProject } from "@/lib/db/queries/projects";
 import languageTemplates from "@/lib/code-templates";
 
 export async function GET(request: NextRequest) {
@@ -12,13 +13,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const file = await createFile({
+  const project = await createProject({
     ownerUserId: user.id,
-    title: "Untitled",
-    language: "python",
+    name: "Untitled Project",
+  });
+
+  await createFile({
+    projectId: project.id,
+    title: "main.py",
     contentText: languageTemplates.python,
   });
 
-  const url = new URL(`/${file.id}`, request.nextUrl.origin);
+  const url = new URL(`/${project.id}`, request.nextUrl.origin);
   return NextResponse.redirect(url);
 }

@@ -3,19 +3,17 @@ import {
   requireAuth,
   requireFileReadAccess,
   requireFileWriteAccess,
-  FileAccessError,
+  AccessError,
 } from "@/lib/auth";
 import {
   getFileWithOwner,
   updateFileMetadata,
   softDeleteFile,
-  getFileById,
 } from "@/lib/db/queries/files";
 import { z } from "zod";
 
 const updateFileSchema = z.object({
   title: z.string().min(1).max(255).optional(),
-  language: z.enum(["python", "typescript"]).optional(),
   contentText: z.string().optional(),
 });
 
@@ -36,16 +34,16 @@ export async function GET(
 
     return NextResponse.json({
       id: row.file.id,
+      projectId: row.projectId,
       title: row.file.title,
-      language: row.file.language,
       contentText: row.file.contentText,
-      ownerUserId: row.file.ownerUserId,
+      ownerUserId: row.ownerUserId,
       ownerName: row.ownerName,
       ownerUsername: row.ownerUsername,
       lastEditedAt: row.file.lastEditedAt,
     });
   } catch (e) {
-    if (e instanceof FileAccessError) {
+    if (e instanceof AccessError) {
       return NextResponse.json({ error: e.message }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -78,7 +76,7 @@ export async function PATCH(
 
     return NextResponse.json(updated);
   } catch (e) {
-    if (e instanceof FileAccessError) {
+    if (e instanceof AccessError) {
       return NextResponse.json({ error: e.message }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -93,12 +91,12 @@ export async function DELETE(
     const user = await requireAuth();
     const { fileId } = await params;
 
-    const file = await getFileById(fileId);
-    if (!file) {
+    const row = await getFileWithOwner(fileId);
+    if (!row) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    if (file.ownerUserId !== user.id) {
+    if (row.ownerUserId !== user.id) {
       return NextResponse.json(
         { error: "Only the owner can delete this file" },
         { status: 403 }

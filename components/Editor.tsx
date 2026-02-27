@@ -1,28 +1,30 @@
 'use client';
 
 import MonacoEditor from '@monaco-editor/react';
-import type { Language } from '@/lib/executor';
+import type { SupportedLanguage } from '@/lib/languages';
+import { inferLanguageFromTitle } from '@/lib/languages';
 
 interface EditorProps {
   code: string;
-  language: Language;
+  fileTitle: string;
   onChange: (value: string | undefined) => void;
   onRun: () => void;
   readOnly?: boolean;
 }
 
-const languageMap: Record<Language, string> = {
+const languageMap: Record<SupportedLanguage, string> = {
   typescript: 'typescript',
   python: 'python',
 };
 
-export default function Editor({ code, language, onChange, onRun, readOnly }: EditorProps) {
+export default function Editor({ code, fileTitle, onChange, onRun, readOnly }: EditorProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       onRun();
     }
   };
+  const language = inferLanguageFromTitle(fileTitle);
 
   return (
     <div

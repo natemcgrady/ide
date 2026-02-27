@@ -32,16 +32,38 @@ export const users = pgTable("users", {
     .notNull(),
 });
 
-// Files table
-export const files = pgTable(
-  "files",
+// Projects table
+export const projects = pgTable(
+  "projects",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     ownerUserId: uuid("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    title: text("title").notNull().default("Untitled"),
-    language: text("language").notNull().default("python"),
+    name: text("name").notNull().default("Untitled Project"),
+    isDeleted: boolean("is_deleted").notNull().default(false),
+    lastEditedAt: timestamp("last_edited_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("projects_owner_last_edited").on(t.ownerUserId, t.lastEditedAt)]
+);
+
+// Files table
+export const files = pgTable(
+  "files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default("untitled.py"),
     contentText: text("content_text").notNull().default(""),
     isDeleted: boolean("is_deleted").notNull().default(false),
     lastEditedAt: timestamp("last_edited_at", { withTimezone: true })
@@ -54,16 +76,16 @@ export const files = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (t) => [index("files_owner_last_edited").on(t.ownerUserId, t.lastEditedAt)]
+  (t) => [index("files_project_last_edited").on(t.projectId, t.lastEditedAt)]
 );
 
-// File collaborators - invite-only sharing with read/write permission
-export const fileCollaborators = pgTable(
-  "file_collaborators",
+// Project collaborators - invite-only sharing with read/write permission
+export const projectCollaborators = pgTable(
+  "project_collaborators",
   {
-    fileId: uuid("file_id")
+    projectId: uuid("project_id")
       .notNull()
-      .references(() => files.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -76,9 +98,12 @@ export const fileCollaborators = pgTable(
       .notNull(),
   },
   (t) => [
-    uniqueIndex("file_collaborators_file_user_unique").on(t.fileId, t.userId),
-    index("file_collaborators_user_file").on(t.userId, t.fileId),
-    index("file_collaborators_file").on(t.fileId),
+    uniqueIndex("project_collaborators_project_user_unique").on(
+      t.projectId,
+      t.userId
+    ),
+    index("project_collaborators_user_project").on(t.userId, t.projectId),
+    index("project_collaborators_project").on(t.projectId),
   ]
 );
 
@@ -113,27 +138,35 @@ export const fileYdocSnapshots = pgTable("file_ydoc_snapshots", {
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
-  ownedFiles: many(files),
-  fileCollaborators: many(fileCollaborators),
+  ownedProjects: many(projects),
+  projectCollaborators: many(projectCollaborators),
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [projects.ownerUserId],
+    references: [users.id],
+  }),
+  files: many(files),
+  collaborators: many(projectCollaborators),
 }));
 
 export const filesRelations = relations(files, ({ one, many }) => ({
-  owner: one(users, {
-    fields: [files.ownerUserId],
-    references: [users.id],
+  project: one(projects, {
+    fields: [files.projectId],
+    references: [projects.id],
   }),
-  collaborators: many(fileCollaborators),
   ydocSnapshot: one(fileYdocSnapshots),
   ydocUpdates: many(fileYdocUpdates),
 }));
 
-export const fileCollaboratorsRelations = relations(
-  fileCollaborators,
+export const projectCollaboratorsRelations = relations(
+  projectCollaborators,
   ({ one }) => ({
-    file: one(files),
+    project: one(projects),
     user: one(users),
     invitedBy: one(users, {
-      fields: [fileCollaborators.invitedByUserId],
+      fields: [projectCollaborators.invitedByUserId],
       references: [users.id],
     }),
   })

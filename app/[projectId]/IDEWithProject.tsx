@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from "react";
-import type { Language } from "@/lib/executor";
 import Console from "@/components/Console";
 import { AppSidebar } from "@/components/app-sidebar";
 import type { CollaboratorPresence } from "@/components/CollaborativeEditor";
@@ -13,15 +12,7 @@ import {
   AvatarGroupCount,
   AvatarImage,
 } from "@/components/ui/avatar";
-import LanguageSelector from "@/components/LanguageSelector";
 import ShareDialog from "@/components/ShareDialog";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
@@ -29,10 +20,9 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Loader2, Play, Share2 } from "lucide-react";
+import { inferLanguageFromTitle } from "@/lib/languages";
 
-const CollaborativeEditor = lazy(
-  () => import("@/components/CollaborativeEditor"),
-);
+const CollaborativeEditor = lazy(() => import("@/components/CollaborativeEditor"));
 
 function EditorLoading() {
   return (
@@ -63,36 +53,58 @@ interface CurrentUserInfo {
   avatar: string | null;
 }
 
-interface IDEWithFileProps {
-  fileId: string;
-  initialTitle: string;
-  initialLanguage: Language;
-  initialCode: string;
+interface ProjectFile {
+  id: string;
+  title: string;
+  contentText: string;
+}
+
+interface IDEWithProjectProps {
+  projectId: string;
+  initialProjectName: string;
+  initialFiles: ProjectFile[];
   canWrite: boolean;
   currentUser: CurrentUserInfo;
 }
 
-export default function IDEWithFile({
-  fileId,
-  initialTitle,
-  initialLanguage,
-  initialCode,
+function getUniqueUntitledFileName(files: ProjectFile[]): string {
+  const existing = new Set(files.map((file) => file.title.toLowerCase()));
+  if (!existing.has("untitled.py")) {
+    return "untitled.py";
+  }
+
+  let index = 1;
+  while (existing.has(`untitled-${index}.py`)) {
+    index += 1;
+  }
+  return `untitled-${index}.py`;
+}
+
+export default function IDEWithProject({
+  projectId,
+  initialProjectName,
+  initialFiles,
   canWrite,
   currentUser,
-}: IDEWithFileProps) {
+}: IDEWithProjectProps) {
   const [editorMounted, setEditorMounted] = useState(false);
   useEffect(() => setEditorMounted(true), []);
 
   const [isRunning, setIsRunning] = useState(false);
-  const [language, setLanguage] = useState<Language>(initialLanguage);
-  const [fileTitle, setFileTitle] = useState<string>(initialTitle);
+  const [projectName] = useState<string>(initialProjectName);
+  const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
+  const [activeFileId, setActiveFileId] = useState<string | null>(
+    initialFiles[0]?.id ?? null
+  );
+  const activeFile = files.find((file) => file.id === activeFileId) ?? null;
+
   const [output, setOutput] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [executionTime, setExecutionTime] = useState<number | undefined>(
-    undefined,
+    undefined
   );
   const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>(
-    [],
+    []
   );
   const [shareOpen, setShareOpen] = useState(false);
   const getCodeRef = useRef<(() => string) | null>(null);
@@ -101,13 +113,17 @@ export default function IDEWithFile({
   const lastEventIdRef = useRef(0);
   const reconnectAttemptsRef = useRef(0);
   const userCancelledRef = useRef(false);
-  const canEditTitle = Boolean(fileId && canWrite);
+  const canEditFiles = Boolean(projectId && canWrite);
   const selfCollaborator = collaborators.find((c) => c.isSelf);
   const hasOtherCollaborators = collaborators.some((c) => !c.isSelf);
   const userAvatarCollabColor =
-    fileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
+    activeFileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
   const otherCollaborators = collaborators.filter((c) => !c.isSelf);
-  const showCollabGroup = Boolean(fileId && canWrite);
+  const showCollabGroup = Boolean(activeFileId && canWrite);
+
+  useEffect(() => {
+    setCollaborators([]);
+  }, [activeFileId]);
 
   const closeStream = useCallback(() => {
     if (eventSourceRef.current) {
@@ -116,10 +132,21 @@ export default function IDEWithFile({
     }
   }, []);
 
+  const handleSelectFile = useCallback((fileId: string) => {
+    setActiveFileId(fileId);
+    setOutput("");
+    setError("");
+    setExecutionTime(undefined);
+  }, []);
+
   const handleTitleChange = useCallback(
-    async (newTitle: string) => {
-      const previousTitle = fileTitle;
-      setFileTitle(newTitle);
+    async (fileId: string, newTitle: string) => {
+      const previousFiles = files;
+      setFiles((current) =>
+        current.map((file) =>
+          file.id === fileId ? { ...file, title: newTitle } : file
+        )
+      );
       try {
         await fetch(`/api/files/${fileId}`, {
           method: "PATCH",
@@ -127,23 +154,69 @@ export default function IDEWithFile({
           body: JSON.stringify({ title: newTitle }),
         });
       } catch {
-        setFileTitle(previousTitle);
+        setFiles(previousFiles);
       }
     },
-    [fileId, fileTitle],
+    [files]
+  );
+
+  const handleCreateFile = useCallback(async () => {
+    if (!canWrite) return;
+    const nextFileName = getUniqueUntitledFileName(files);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: nextFileName,
+          contentText: "",
+        }),
+      });
+      if (!response.ok) {
+        return;
+      }
+      const file = (await response.json()) as ProjectFile;
+      setFiles((current) => [file, ...current]);
+      setActiveFileId(file.id);
+    } catch {
+      // Ignore create errors to keep UX responsive.
+    }
+  }, [canWrite, files, projectId]);
+
+  const handleDeleteFile = useCallback(
+    async (fileId: string) => {
+      if (!canWrite) return;
+      const previousFiles = files;
+      const deletedIndex = files.findIndex((file) => file.id === fileId);
+      const remainingFiles = files.filter((file) => file.id !== fileId);
+      setFiles(remainingFiles);
+
+      if (activeFileId === fileId) {
+        const fallbackIndex = Math.max(0, Math.min(deletedIndex, remainingFiles.length - 1));
+        setActiveFileId(remainingFiles[fallbackIndex]?.id ?? null);
+      }
+
+      try {
+        const response = await fetch(`/api/files/${fileId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to delete file");
+        }
+      } catch {
+        setFiles(previousFiles);
+        if (activeFileId === fileId) {
+          setActiveFileId(fileId);
+        }
+      }
+    },
+    [activeFileId, canWrite, files]
   );
 
   const preloadEditor = useCallback(() => {
     if (typeof window !== "undefined") {
       void import("@/components/Editor");
     }
-  }, []);
-
-  const handleLanguageChange = useCallback((newLanguage: Language) => {
-    setLanguage(newLanguage);
-    setOutput("");
-    setError("");
-    setExecutionTime(undefined);
   }, []);
 
   const connectToRunEvents = useCallback(
@@ -220,12 +293,13 @@ export default function IDEWithFile({
         }, 600);
       };
     },
-    [closeStream, isRunning],
+    [closeStream, isRunning]
   );
 
   const handleRun = useCallback(() => {
-    if (isRunning) return;
-    const code = getCodeRef.current?.() ?? initialCode;
+    if (isRunning || !activeFile) return;
+    const code = getCodeRef.current?.() ?? activeFile.contentText;
+    const language = inferLanguageFromTitle(activeFile.title);
     userCancelledRef.current = false;
     closeStream();
     setOutput("");
@@ -259,7 +333,7 @@ export default function IDEWithFile({
         setError(message);
       }
     })();
-  }, [closeStream, connectToRunEvents, initialCode, isRunning, language]);
+  }, [activeFile, closeStream, connectToRunEvents, isRunning]);
 
   const handleCancel = useCallback(() => {
     const runId = activeRunIdRef.current;
@@ -308,8 +382,8 @@ export default function IDEWithFile({
       setConsoleHeight((h) =>
         Math.max(
           CONSOLE_MIN_HEIGHT,
-          Math.min(CONSOLE_MAX_HEIGHT, Math.round(h + delta)),
-        ),
+          Math.min(CONSOLE_MAX_HEIGHT, Math.round(h + delta))
+        )
       );
     };
 
@@ -333,9 +407,14 @@ export default function IDEWithFile({
     <SidebarProvider>
       <AppSidebar
         user={currentUser}
-        currentFile={{ title: fileTitle, language }}
-        canEditFileName={canEditTitle}
+        projectName={projectName}
+        files={files.map((file) => ({ id: file.id, title: file.title }))}
+        activeFileId={activeFileId}
+        canEditFiles={canEditFiles}
+        onSelectFile={handleSelectFile}
         onRenameFile={handleTitleChange}
+        onCreateFile={handleCreateFile}
+        onDeleteFile={handleDeleteFile}
       />
       <SidebarInset>
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
@@ -344,27 +423,10 @@ export default function IDEWithFile({
             orientation="vertical"
             className="mr-1 data-[orientation=vertical]:h-4"
           />
-          <Breadcrumb className="min-w-0">
-            <BreadcrumbList>
-              <BreadcrumbItem className="hidden md:block">
-                <BreadcrumbPage className="text-muted-foreground">
-                  Files
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator className="hidden md:block" />
-              <BreadcrumbItem className="min-w-0">
-                <BreadcrumbPage className="max-w-64 truncate font-semibold text-foreground">
-                  {fileTitle || "Untitled"}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <span className="min-w-0 max-w-64 truncate font-semibold text-foreground">
+            {activeFile?.title ?? "No file selected"}
+          </span>
           <div className="ml-auto flex items-center gap-2">
-            <LanguageSelector
-              language={language}
-              onChange={handleLanguageChange}
-              disabled={!canWrite}
-            />
             {showCollabGroup && (
               <AvatarGroup aria-label="Active collaborators">
                 {otherCollaborators.map((c) => (
@@ -388,8 +450,8 @@ export default function IDEWithFile({
                   </Avatar>
                 ))}
                 <AvatarGroupCount
-                  aria-label="Share file"
-                  title="Share file"
+                  aria-label="Share project"
+                  title="Share project"
                   onClick={() => setShareOpen(true)}
                   style={{
                     borderColor: userAvatarCollabColor,
@@ -407,7 +469,7 @@ export default function IDEWithFile({
                 size="sm"
                 variant="destructive"
                 onClick={handleCancel}
-                disabled={!handleCancel}
+                disabled={!handleCancel || !activeFile}
               >
                 <Loader2 className="size-4 animate-spin" />
                 Cancel
@@ -418,6 +480,7 @@ export default function IDEWithFile({
                 onClick={handleRun}
                 onMouseEnter={preloadEditor}
                 onFocus={preloadEditor}
+                disabled={!activeFile}
               >
                 <Play className="size-4" />
                 Run
@@ -428,12 +491,17 @@ export default function IDEWithFile({
 
         <div className="flex min-h-0 flex-1 flex-col bg-background">
           <div className="min-h-0 flex-1 overflow-hidden">
-            {editorMounted ? (
+            {!activeFile ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Create or select a file to start editing.
+              </div>
+            ) : editorMounted ? (
               <Suspense fallback={<EditorLoading />}>
                 <CollaborativeEditor
-                  fileId={fileId}
-                  language={language}
-                  initialCode={initialCode}
+                  key={activeFile.id}
+                  fileId={activeFile.id}
+                  fileTitle={activeFile.title}
+                  initialCode={activeFile.contentText}
                   onRun={handleRun}
                   readOnly={!canWrite}
                   onPresenceChange={setCollaborators}
@@ -471,8 +539,8 @@ export default function IDEWithFile({
           </div>
         </div>
       </SidebarInset>
-      {shareOpen && fileId && (
-        <ShareDialog fileId={fileId} onClose={() => setShareOpen(false)} />
+      {shareOpen && projectId && (
+        <ShareDialog projectId={projectId} onClose={() => setShareOpen(false)} />
       )}
     </SidebarProvider>
   );

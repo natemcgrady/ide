@@ -12,7 +12,7 @@ export function proxy(req: NextRequest) {
 
   if (isPublicPath(path)) {
     if (path.startsWith("/sign-in") && accessToken) {
-      return NextResponse.redirect(new URL("/files", req.url));
+      return NextResponse.redirect(new URL("/", req.url));
     }
     return NextResponse.next();
   }

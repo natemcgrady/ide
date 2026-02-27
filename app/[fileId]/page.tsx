@@ -24,10 +24,11 @@ export default async function FileEditorPage({
 
   const canAccess = await hasFileAccess(fileId, user.id, "read");
   if (!canAccess) {
-    redirect("/files");
+    redirect("/");
   }
 
   const canWrite = await hasFileAccess(fileId, user.id, "write");
+  const isOwner = row.file.ownerUserId === user.id;
 
   return (
     <IDEWithFile
@@ -36,6 +37,7 @@ export default async function FileEditorPage({
       initialLanguage={row.file.language as "python" | "typescript"}
       initialCode={row.file.contentText}
       canWrite={canWrite}
+      isOwner={isOwner}
     />
   );
 }

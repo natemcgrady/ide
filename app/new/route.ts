@@ -19,6 +19,6 @@ export async function GET(request: NextRequest) {
     contentText: languageTemplates.python,
   });
 
-  const url = new URL(`/files/${file.id}`, request.nextUrl.origin);
+  const url = new URL(`/${file.id}`, request.nextUrl.origin);
   return NextResponse.redirect(url);
 }

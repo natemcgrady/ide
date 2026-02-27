@@ -1,9 +1,10 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useTransition, useState, useRef, useEffect } from "react";
 import useSWR from "swr";
 import type { Language } from "@/lib/executor";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import LanguageSelector from "./LanguageSelector";
 import {
   DropdownMenu,
@@ -11,8 +12,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import Link from "next/link";
-import { Play, Loader2, LogOut, User, ArrowLeft, Share2 } from "lucide-react";
+import { Play, Loader2, LogOut, User, ArrowLeft, Share2, Pencil, Trash2 } from "lucide-react";
 import ShareDialog from "./ShareDialog";
 
 interface UserData {
@@ -39,9 +48,12 @@ interface ToolbarProps {
   language: Language;
   onLanguageChange: (language: Language) => void;
   onRun: () => void;
+  onCancel?: () => void;
   isRunning: boolean;
   fileId?: string;
   fileTitle?: string;
+  onTitleChange?: (title: string) => void;
+  onDelete?: () => void | Promise<void>;
   canWrite?: boolean;
   collaborators?: CollaboratorPresence[];
 }
@@ -50,16 +62,46 @@ export default function Toolbar({
   language,
   onLanguageChange,
   onRun,
+  onCancel,
   isRunning,
   fileId,
   fileTitle,
+  onTitleChange,
+  onDelete,
   canWrite = true,
   collaborators = [],
 }: ToolbarProps) {
   const [isPending, startTransition] = useTransition();
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const { data: user } = useSWR("/api/auth/me", userFetcher, {
     revalidateOnFocus: false,
   });
+
+  const canEditTitle = Boolean(fileId && canWrite && onTitleChange);
+
+  const startEditingTitle = () => {
+    if (!canEditTitle) return;
+    setEditTitleValue(fileTitle || "Untitled");
+    setIsEditingTitle(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const saveTitle = () => {
+    const trimmed = editTitleValue.trim() || "Untitled";
+    if (trimmed !== (fileTitle || "Untitled")) {
+      onTitleChange?.(trimmed);
+    }
+    setIsEditingTitle(false);
+  };
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      inputRef.current?.select();
+    }
+  }, [isEditingTitle]);
 
   const handleSignOut = () => {
     startTransition(async () => {
@@ -75,6 +117,19 @@ export default function Toolbar({
   };
 
   const [shareOpen, setShareOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteClick = async () => {
+    if (!onDelete) return;
+    setIsDeleting(true);
+    try {
+      await onDelete();
+      setDeleteOpen(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const initials = user?.name
     ? user.name
@@ -91,15 +146,45 @@ export default function Toolbar({
         {fileId ? (
           <>
             <Link
-              href="/files"
+              href="/"
               className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="size-4" />
               Back
             </Link>
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">
-              {fileTitle || "Untitled"}
-            </h1>
+            {isEditingTitle ? (
+              <Input
+                ref={inputRef}
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    saveTitle();
+                  }
+                  if (e.key === "Escape") {
+                    setEditTitleValue(fileTitle || "Untitled");
+                    setIsEditingTitle(false);
+                  }
+                }}
+                className="h-8 w-48 text-lg font-semibold"
+                maxLength={255}
+                aria-label="File name"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={startEditingTitle}
+                className={`flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground ${canEditTitle ? "cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-muted/50" : ""}`}
+                aria-label={canEditTitle ? "Click to rename file" : undefined}
+              >
+                {fileTitle || "Untitled"}
+                {canEditTitle && (
+                  <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-60" />
+                )}
+              </button>
+            )}
           </>
         ) : (
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
@@ -160,27 +245,39 @@ export default function Toolbar({
             Share
           </Button>
         )}
-        <Button
-          size="sm"
-          onClick={onRun}
-          onMouseEnter={preloadEditor}
-          onFocus={preloadEditor}
-          disabled={isRunning}
-        >
-          {isRunning ? (
-            <>
-              <span className="animate-spin">
-                <Loader2 className="size-4" />
-              </span>
-              Running...
-            </>
-          ) : (
-            <>
-              <Play className="size-4" />
-              Run
-            </>
-          )}
-        </Button>
+        {fileId && onDelete && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteOpen(true)}
+            aria-label="Delete file"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+            Delete
+          </Button>
+        )}
+        {isRunning ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={onCancel}
+            disabled={!onCancel}
+          >
+            <Loader2 className="size-4 animate-spin" />
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            onClick={onRun}
+            onMouseEnter={preloadEditor}
+            onFocus={preloadEditor}
+          >
+            <Play className="size-4" />
+            Run
+          </Button>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -220,6 +317,40 @@ export default function Toolbar({
         {shareOpen && fileId && (
           <ShareDialog fileId={fileId} onClose={() => setShareOpen(false)} />
         )}
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete file?</DialogTitle>
+              <DialogDescription>
+                This will permanently delete "{fileTitle || "Untitled"}". This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDeleteOpen(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteClick}
+                disabled={isDeleting}
+                className="flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

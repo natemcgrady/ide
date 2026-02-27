@@ -20,6 +20,16 @@ export interface ExecutionResult {
   executionTime: number;
 }
 
+export interface ExecutionLogChunk {
+  stream: "stdout" | "stderr";
+  chunk: string;
+}
+
+export interface ExecuteCodeOptions {
+  signal?: AbortSignal;
+  onLog?: (chunk: ExecutionLogChunk) => void;
+}
+
 interface LanguageConfig {
   extension: string;
   command: string;
@@ -78,12 +88,13 @@ async function getPythonRequirements(): Promise<string | null> {
 
 async function runLocalPython(
   filePath: string,
+  options?: ExecuteCodeOptions,
 ): Promise<{ output: string; error: string; exitCode: number }> {
   let lastFailure: { output: string; error: string; exitCode: number } | null =
     null;
 
   for (const command of localPythonCandidates) {
-    const result = await runProcess(command, [filePath]);
+    const result = await runProcess(command, [filePath], options);
     if (!result.error.startsWith("Failed to start process:")) {
       return result;
     }
@@ -104,6 +115,7 @@ async function runSandboxCommand(
   command: string,
   args: string[],
   timeoutMs: number,
+  options?: ExecuteCodeOptions,
 ): Promise<{
   output: string;
   error: string;
@@ -112,6 +124,11 @@ async function runSandboxCommand(
 }> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+  const externalSignal = options?.signal;
+  const onExternalAbort = () => abortController.abort();
+  if (externalSignal) {
+    externalSignal.addEventListener("abort", onExternalAbort);
+  }
 
   try {
     const cmd = await sandbox.runCommand({
@@ -121,6 +138,12 @@ async function runSandboxCommand(
       signal: abortController.signal,
     });
     const [output, error] = await Promise.all([cmd.stdout(), cmd.stderr()]);
+    if (output) {
+      options?.onLog?.({ stream: "stdout", chunk: output });
+    }
+    if (error) {
+      options?.onLog?.({ stream: "stderr", chunk: error });
+    }
     return {
       output,
       error,
@@ -140,10 +163,16 @@ async function runSandboxCommand(
     throw err;
   } finally {
     clearTimeout(timeout);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
-async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
+async function executePythonInSandbox(
+  code: string,
+  options?: ExecuteCodeOptions,
+): Promise<ExecutionResult> {
   const startTime = Date.now();
   let sandbox: Sandbox | null = null;
 
@@ -190,6 +219,7 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
         "pip",
         ["install", "--disable-pip-version-check", "-r", "requirements.txt"],
         PYTHON_INSTALL_TIMEOUT,
+        options,
       );
 
       if (installResult.exitCode !== 0) {
@@ -202,6 +232,7 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
       "python",
       [pythonFilePath],
       EXECUTION_TIMEOUT,
+      options,
     );
     const error = [installWarning, result.error].filter(Boolean).join("\n");
 
@@ -235,9 +266,10 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
 export async function executeCode(
   code: string,
   language: Language,
+  options?: ExecuteCodeOptions,
 ): Promise<ExecutionResult> {
   if (language === "python" && shouldUseSandboxForPython()) {
-    return executePythonInSandbox(code);
+    return executePythonInSandbox(code, options);
   }
 
   const config = languageConfigs[language];
@@ -265,8 +297,8 @@ export async function executeCode(
     const startTime = Date.now();
     const result =
       language === "python"
-        ? await runLocalPython(filePath)
-        : await runProcess(config.command, config.args(filePath));
+        ? await runLocalPython(filePath, options)
+        : await runProcess(config.command, config.args(filePath), options);
     const executionTime = Date.now() - startTime;
 
     return {
@@ -293,22 +325,38 @@ export async function executeCode(
 function runProcess(
   command: string,
   args: string[],
+  options?: ExecuteCodeOptions,
 ): Promise<{ output: string; error: string; exitCode: number }> {
   return new Promise((resolve) => {
+    const externalSignal = options?.signal;
+    if (externalSignal?.aborted) {
+      resolve({
+        output: "",
+        error: "Execution cancelled",
+        exitCode: 130,
+      });
+      return;
+    }
+
     const process = spawn(command, args, {
       timeout: EXECUTION_TIMEOUT,
       shell: false,
+      signal: externalSignal,
     });
 
     let stdout = "";
     let stderr = "";
 
     process.stdout.on("data", (data) => {
-      stdout += data.toString();
+      const chunk = data.toString();
+      stdout += chunk;
+      options?.onLog?.({ stream: "stdout", chunk });
     });
 
     process.stderr.on("data", (data) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      options?.onLog?.({ stream: "stderr", chunk });
     });
 
     const timeout = setTimeout(() => {
@@ -327,6 +375,14 @@ function runProcess(
 
     process.on("error", (err) => {
       clearTimeout(timeout);
+      if ((err as { name?: string }).name === "AbortError") {
+        resolve({
+          output: stdout,
+          error: "Execution cancelled",
+          exitCode: 130,
+        });
+        return;
+      }
       resolve({
         output: stdout,
         error: `Failed to start process: ${err.message}`,

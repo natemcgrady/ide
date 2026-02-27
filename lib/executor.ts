@@ -178,23 +178,23 @@ async function executePythonInSandbox(code: string): Promise<ExecutionResult> {
 
     let installWarning = "";
     if (!snapshotId && requirements) {
-        await sandbox.writeFiles([
-          {
-            path: `${SANDBOX_WORKDIR}/requirements.txt`,
-            content: Buffer.from(requirements, "utf-8"),
-          },
-        ]);
+      await sandbox.writeFiles([
+        {
+          path: `${SANDBOX_WORKDIR}/requirements.txt`,
+          content: Buffer.from(requirements, "utf-8"),
+        },
+      ]);
 
-        const installResult = await runSandboxCommand(
-          sandbox,
-          "pip",
-          ["install", "--disable-pip-version-check", "-r", "requirements.txt"],
-          PYTHON_INSTALL_TIMEOUT,
-        );
+      const installResult = await runSandboxCommand(
+        sandbox,
+        "pip",
+        ["install", "--disable-pip-version-check", "-r", "requirements.txt"],
+        PYTHON_INSTALL_TIMEOUT,
+      );
 
-        if (installResult.exitCode !== 0) {
-          installWarning = `Dependency install warning:\n${installResult.error || installResult.output}`;
-        }
+      if (installResult.exitCode !== 0) {
+        installWarning = `Dependency install warning:\n${installResult.error || installResult.output}`;
+      }
     }
 
     const result = await runSandboxCommand(
@@ -313,7 +313,7 @@ function runProcess(
 
     const timeout = setTimeout(() => {
       process.kill("SIGTERM");
-      stderr += "\n[Execution timed out after 10 seconds]";
+      stderr += "\n[Execution timed out after 60 seconds]";
     }, EXECUTION_TIMEOUT);
 
     process.on("close", (code) => {

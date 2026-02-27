@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { cookies } from "next/headers";
+import { decodeJwt } from "jose";
 
 interface TokenData {
   access_token: string;
@@ -21,12 +22,12 @@ function validate(
 }
 
 function decodeNonce(idToken: string): string {
-  const payload = idToken.split(".")[1];
-  const decodedPayload = Buffer.from(payload ?? "", "base64").toString(
-    "utf-8",
-  );
-  const nonceMatch = decodedPayload.match(/"nonce":"([^"]+)"/);
-  return nonceMatch ? nonceMatch[1] : "";
+  try {
+    const payload = decodeJwt(idToken);
+    return typeof payload.nonce === "string" ? payload.nonce : "";
+  } catch {
+    return "";
+  }
 }
 
 async function exchangeCodeForToken(

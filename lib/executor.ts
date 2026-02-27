@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { once } from "events";
 import {
   writeFile,
   unlink,
@@ -8,6 +9,7 @@ import {
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
+import { PassThrough } from "stream";
 import { Sandbox } from "@vercel/sandbox";
 import { isSupportedLanguage, type SupportedLanguage } from "@/lib/languages";
 
@@ -61,6 +63,13 @@ const EXECUTION_TIMEOUT = 60000; // 1 minute
 const PYTHON_SANDBOX_TIMEOUT = 120000; // 2 minutes
 const PYTHON_INSTALL_TIMEOUT = 60000; // 1 minute
 const SANDBOX_WORKDIR = "/vercel/sandbox";
+
+function emitSandboxStep(options: ExecuteCodeOptions | undefined, message: string) {
+  options?.onLog?.({
+    stream: "stdout",
+    chunk: `[sandbox] ${message}\n`,
+  });
+}
 
 function shouldUseSandboxForPython(): boolean {
   return (
@@ -131,19 +140,33 @@ async function runSandboxCommand(
   }
 
   try {
+    const stdoutStream = new PassThrough();
+    const stderrStream = new PassThrough();
+    let output = "";
+    let error = "";
+
+    stdoutStream.on("data", (data) => {
+      const chunk = data.toString();
+      output += chunk;
+      options?.onLog?.({ stream: "stdout", chunk });
+    });
+    stderrStream.on("data", (data) => {
+      const chunk = data.toString();
+      error += chunk;
+      options?.onLog?.({ stream: "stderr", chunk });
+    });
+
     const cmd = await sandbox.runCommand({
       cmd: command,
       args,
       cwd: SANDBOX_WORKDIR,
       signal: abortController.signal,
+      stdout: stdoutStream,
+      stderr: stderrStream,
     });
-    const [output, error] = await Promise.all([cmd.stdout(), cmd.stderr()]);
-    if (output) {
-      options?.onLog?.({ stream: "stdout", chunk: output });
-    }
-    if (error) {
-      options?.onLog?.({ stream: "stderr", chunk: error });
-    }
+
+    await Promise.allSettled([once(stdoutStream, "finish"), once(stderrStream, "finish")]);
+
     return {
       output,
       error,
@@ -178,6 +201,12 @@ async function executePythonInSandbox(
 
   try {
     const snapshotId = process.env.VERCEL_PYTHON_SANDBOX_SNAPSHOT_ID;
+    emitSandboxStep(
+      options,
+      snapshotId
+        ? `Creating sandbox from snapshot ${snapshotId}...`
+        : "Creating Python sandbox...",
+    );
 
     // Sandbox creation and requirements discovery are independent I/O; run in parallel
     const [createdSandbox, requirements] = await Promise.all([
@@ -194,10 +223,12 @@ async function executePythonInSandbox(
     ]);
 
     sandbox = createdSandbox;
+    emitSandboxStep(options, "Sandbox ready.");
 
     const pythonFileName = `code_${randomUUID()}.py`;
     const pythonFilePath = `${SANDBOX_WORKDIR}/${pythonFileName}`;
 
+    emitSandboxStep(options, "Uploading script...");
     await sandbox.writeFiles([
       {
         path: pythonFilePath,
@@ -207,6 +238,7 @@ async function executePythonInSandbox(
 
     let installWarning = "";
     if (!snapshotId && requirements) {
+      emitSandboxStep(options, "Installing Python dependencies...");
       await sandbox.writeFiles([
         {
           path: `${SANDBOX_WORKDIR}/requirements.txt`,
@@ -223,16 +255,24 @@ async function executePythonInSandbox(
       );
 
       if (installResult.exitCode !== 0) {
+        emitSandboxStep(options, "Dependency installation failed.");
         installWarning = `Dependency install warning:\n${installResult.error || installResult.output}`;
+      } else {
+        emitSandboxStep(options, "Dependencies installed.");
       }
     }
 
+    emitSandboxStep(options, "Running Python command...");
     const result = await runSandboxCommand(
       sandbox,
       "python",
       [pythonFilePath],
       EXECUTION_TIMEOUT,
       options,
+    );
+    emitSandboxStep(
+      options,
+      `Python command finished with exit code ${result.exitCode}.`,
     );
     const error = [installWarning, result.error].filter(Boolean).join("\n");
 
@@ -255,6 +295,7 @@ async function executePythonInSandbox(
   } finally {
     if (sandbox) {
       try {
+        emitSandboxStep(options, "Stopping sandbox...");
         await sandbox.stop({ blocking: false });
       } catch {
         // Ignore cleanup errors

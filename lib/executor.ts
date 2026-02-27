@@ -246,7 +246,7 @@ export async function executeCode(
     };
   }
 
-  const tempDir = join(tmpdir(), "interview-ide");
+  const tempDir = join(tmpdir(), "ide");
   const fileName = `code_${randomUUID()}${config.extension}`;
   const filePath = join(tempDir, fileName);
 

@@ -94,20 +94,33 @@ export default function CollaborativeEditor({
 
     const ytext = ydoc.getText("monaco");
 
-    // Propagate local user identity into Yjs awareness so remote cursors are
-    // colored consistently with the presence ring in the toolbar.
-    const unsubSelf = room.subscribe("status", () => {
+    // Keep local awareness populated for both y-monaco (state.user.*) and
+    // our toolbar presence list (top-level fields).
+    const syncSelfAwareness = () => {
       const self = room.getSelf();
       if (!self?.id || !mounted) return;
       const info = self.info as { name?: string; avatar?: string | null } | null;
       const selfId: string = self.id;
+      const name = info?.name ?? "Anonymous";
+      const avatar = info?.avatar ?? null;
+      const color = hashToColor(selfId);
+
+      // Merge with current state to avoid clobbering y-monaco selection updates.
+      const currentState =
+        (provider.awareness.getLocalState() as Record<string, unknown> | null) ??
+        {};
       provider.awareness.setLocalState({
+        ...currentState,
         userId: selfId,
-        name: info?.name ?? "Anonymous",
-        avatar: info?.avatar ?? null,
-        color: hashToColor(selfId),
+        name,
+        avatar,
+        color,
+        user: { name, color },
       });
-    });
+    };
+
+    syncSelfAwareness();
+    const unsubSelf = room.subscribe("status", syncSelfAwareness);
 
     // Presence bar — rebuild whenever awareness changes.
     // The local client's entry in getStates() keyed by doc.clientID.
@@ -121,11 +134,18 @@ export default function CollaborativeEditor({
         const s = state as Record<string, unknown>;
         if (!s.userId) return;
         const isLocal = clientId === localClientId;
+        const userObj =
+          typeof s.user === "object" && s.user !== null
+            ? (s.user as Record<string, unknown>)
+            : null;
+
         users[isLocal ? "unshift" : "push"]({
           userId: String(s.userId),
-          name: String(s.name ?? "Anonymous"),
+          name: String(s.name ?? userObj?.name ?? "Anonymous"),
           avatar: typeof s.avatar === "string" ? s.avatar : null,
-          color: String(s.color ?? hashToColor(String(s.userId))),
+          color: String(
+            s.color ?? userObj?.color ?? hashToColor(String(s.userId))
+          ),
         });
       });
 

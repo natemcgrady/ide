@@ -39,19 +39,32 @@ export default function FileListItem({
 }: FileListItemProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDelete = async () => {
+    setDeleteError(null);
+    setDeleteOpen(false);
+    setIsDeleted(true);
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/files/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setDeleteOpen(false);
-        window.location.href = "/";
+      if (!res.ok) {
+        throw new Error("Delete request failed");
       }
+    } catch {
+      // Roll back optimistic UI on failure.
+      setIsDeleted(false);
+      setDeleteOpen(true);
+      setDeleteError("Could not delete this file. Please try again.");
     } finally {
       setIsDeleting(false);
     }
   };
+
+  if (isDeleted) {
+    return null;
+  }
 
   return (
     <li className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-3 transition-colors hover:bg-muted/50">
@@ -99,6 +112,9 @@ export default function FileListItem({
               This will permanently delete "{title || "Untitled"}". This action
               cannot be undone.
             </DialogDescription>
+            {deleteError && (
+              <p className="text-sm text-destructive">{deleteError}</p>
+            )}
           </DialogHeader>
           <DialogFooter>
             <Button

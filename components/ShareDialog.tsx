@@ -111,7 +111,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
               </p>
               <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
                 <User className="size-4 text-muted-foreground" />
-                <span>
+                <span className="text-foreground">
                   {data.owner.userName ?? data.owner.userUsername ?? "Unknown"}
                 </span>
               </div>
@@ -154,7 +154,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
               </Button>
             </div>
             {inviteError && (
-              <p className="mt-1 text-sm text-red-500">{inviteError}</p>
+              <p className="mt-1 text-sm text-destructive">{inviteError}</p>
             )}
           </div>
 
@@ -179,7 +179,7 @@ export default function ShareDialog({ fileId, onClose }: ShareDialogProps) {
                       ) : (
                         <User className="size-4 text-muted-foreground" />
                       )}
-                      <span>
+                      <span className="text-foreground">
                         {c.userName ?? c.userEmail ?? "Unknown"}
                       </span>
                     </div>

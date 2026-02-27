@@ -48,7 +48,7 @@ export default function Console({
             <Badge className="text-xs">{executionTime}ms</Badge>
           )}
         </div>
-        <Button size="sm" onClick={onClear}>
+        <Button variant="ghost" size="sm" onClick={onClear}>
           <Trash2 className="size-4" />
           Clear
         </Button>

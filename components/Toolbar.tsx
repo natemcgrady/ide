@@ -138,7 +138,7 @@ export default function Toolbar({
                     />
                   ) : (
                     <span
-                      className="text-xs font-medium text-muted-foreground"
+                      className="text-xs font-medium"
                       style={{ color: c.color }}
                     >
                       {c.name.slice(0, 1).toUpperCase()}
@@ -186,7 +186,7 @@ export default function Toolbar({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted ring-offset-background transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+              className="flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-border bg-muted ring-offset-background transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
               disabled={isPending}
               aria-label="User menu"
             >

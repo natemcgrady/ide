@@ -1,4 +1,4 @@
-This is a Next.js interview IDE with server-side code execution for TypeScript and Python.
+This is a Next.js IDE with server-side code execution for TypeScript and Python.
 
 ## Getting Started
 

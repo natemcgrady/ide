@@ -5,7 +5,7 @@ export default function SignInPage() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Interview IDE
+          IDE
         </h1>
         <p className="text-sm text-muted-foreground">
           Sign in to access the code editor

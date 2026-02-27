@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Interview IDE",
-  description: "Web-based code editor for technical interviews",
+  title: "IDE",
+  description: "Web-based code editor",
 };
 
 export default function RootLayout({

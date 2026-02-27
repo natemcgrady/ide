@@ -1,23 +1,22 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import dynamic from "next/dynamic";
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import type { Language } from "@/lib/executor";
 import Console from "@/components/Console";
 import Toolbar from "@/components/Toolbar";
 import type { CollaboratorPresence } from "@/components/CollaborativeEditor";
 
-const CollaborativeEditor = dynamic(
+const CollaborativeEditor = lazy(
   () => import("@/components/CollaborativeEditor"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-background">
-        <span className="text-sm text-muted-foreground">Loading editor...</span>
-      </div>
-    ),
-  },
 );
+
+function EditorLoading() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background">
+      <span className="text-sm text-muted-foreground">Loading editor...</span>
+    </div>
+  );
+}
 
 interface ExecutionResult {
   output: string;
@@ -34,12 +33,19 @@ interface RunEvent {
   data?: unknown;
 }
 
+interface CurrentUserInfo {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
 interface IDEWithFileProps {
   fileId: string;
   initialTitle: string;
   initialLanguage: Language;
   initialCode: string;
   canWrite: boolean;
+  currentUser: CurrentUserInfo;
 }
 
 export default function IDEWithFile({
@@ -48,7 +54,11 @@ export default function IDEWithFile({
   initialLanguage,
   initialCode,
   canWrite,
+  currentUser,
 }: IDEWithFileProps) {
+  const [editorMounted, setEditorMounted] = useState(false);
+  useEffect(() => setEditorMounted(true), []);
+
   const [isRunning, setIsRunning] = useState(false);
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [fileTitle, setFileTitle] = useState<string>(initialTitle);
@@ -298,15 +308,22 @@ export default function IDEWithFile({
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-hidden">
-          <CollaborativeEditor
-            fileId={fileId}
-            language={language}
-            initialCode={initialCode}
-            onRun={handleRun}
-            readOnly={!canWrite}
-            onPresenceChange={setCollaborators}
-            getCodeRef={getCodeRef}
-          />
+          {editorMounted ? (
+            <Suspense fallback={<EditorLoading />}>
+              <CollaborativeEditor
+                fileId={fileId}
+                language={language}
+                initialCode={initialCode}
+                onRun={handleRun}
+                readOnly={!canWrite}
+                onPresenceChange={setCollaborators}
+                getCodeRef={getCodeRef}
+                currentUser={currentUser}
+              />
+            </Suspense>
+          ) : (
+            <EditorLoading />
+          )}
         </div>
 
         <div

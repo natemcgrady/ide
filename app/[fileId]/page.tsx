@@ -36,6 +36,11 @@ export default async function FileEditorPage({
       initialLanguage={row.file.language as "python" | "typescript"}
       initialCode={row.file.contentText}
       canWrite={canWrite}
+      currentUser={{
+        id: user.id,
+        name: user.name ?? user.username ?? "Anonymous",
+        avatar: user.avatarUrl,
+      }}
     />
   );
 }

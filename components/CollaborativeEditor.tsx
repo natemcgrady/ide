@@ -30,6 +30,12 @@ const liveblocksClient = createClient({
   authEndpoint: "/api/collab/token",
 });
 
+interface CurrentUserInfo {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
 interface CollaborativeEditorProps {
   fileId: string;
   language: Language;
@@ -38,6 +44,7 @@ interface CollaborativeEditorProps {
   readOnly: boolean;
   onPresenceChange?: (users: CollaboratorPresence[]) => void;
   getCodeRef?: React.MutableRefObject<(() => string) | null>;
+  currentUser: CurrentUserInfo;
 }
 
 export default function CollaborativeEditor({
@@ -48,6 +55,7 @@ export default function CollaborativeEditor({
   readOnly,
   onPresenceChange,
   getCodeRef,
+  currentUser,
 }: CollaborativeEditorProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -88,9 +96,22 @@ export default function CollaborativeEditor({
     let mounted = true;
     const roomId = `file:${fileId}`;
 
+    const selfColor = hashToColor(currentUser.id);
+    const selfAwareness = {
+      userId: currentUser.id,
+      name: currentUser.name,
+      avatar: currentUser.avatar,
+      color: selfColor,
+      user: { name: currentUser.name, avatar: currentUser.avatar, color: selfColor },
+    };
+
     const ydoc = new Y.Doc();
-    const { room, leave } = liveblocksClient.enterRoom(roomId);
+    const { room, leave } = liveblocksClient.enterRoom(roomId, {
+      initialPresence: { __yjs: selfAwareness } as unknown as Record<string, never>,
+    });
     const provider = new LiveblocksYjsProvider(room, ydoc);
+
+    provider.awareness.setLocalState(selfAwareness);
 
     ydocRef.current = ydoc;
     providerRef.current = provider;
@@ -117,16 +138,18 @@ export default function CollaborativeEditor({
         typeof state.user === "object" && state.user !== null
           ? (state.user as Record<string, unknown>)
           : null;
+      const topLevelName =
+        typeof state.name === "string" ? state.name.trim() : "";
+      const nestedName =
+        typeof userObj?.name === "string" ? userObj.name.trim() : "";
       const userId =
         typeof state.userId === "string" && state.userId.length > 0
           ? state.userId
           : `client:${clientId}`;
       const name =
-        typeof state.name === "string"
-          ? state.name
-          : typeof userObj?.name === "string"
-            ? userObj.name
-            : "Anonymous";
+        nestedName && topLevelName === "Anonymous"
+          ? nestedName
+          : topLevelName || nestedName || "Anonymous";
       const avatar =
         typeof state.avatar === "string" && state.avatar.length > 0
           ? state.avatar
@@ -165,8 +188,9 @@ export default function CollaborativeEditor({
       styleEl.textContent = rules.join("\n");
     };
 
-    // Keep local awareness populated for both y-monaco (state.user.*) and
-    // our toolbar presence list (top-level fields).
+    // Refresh awareness if the Liveblocks session returns richer info
+    // (e.g. after auth completes). This is just a fallback — the initial
+    // awareness was already set from props above.
     const syncSelfAwareness = () => {
       const self = room.getSelf();
       if (!self?.id || !mounted) return;
@@ -175,20 +199,15 @@ export default function CollaborativeEditor({
         username?: string;
         avatar?: string | null;
       } | null;
-      const selfId: string = self.id;
-      const name = info?.name ?? info?.username ?? "Anonymous";
-      const avatar = info?.avatar ?? null;
-      const color = hashToColor(selfId);
+      const name = info?.name ?? info?.username ?? currentUser.name;
+      const avatar = info?.avatar ?? currentUser.avatar;
+      const color = hashToColor(self.id);
 
-      // Merge with current state to avoid clobbering y-monaco selection updates.
       const currentState =
-        (provider.awareness.getLocalState() as Record<
-          string,
-          unknown
-        > | null) ?? {};
+        (provider.awareness.getLocalState() as Record<string, unknown> | null) ?? {};
       provider.awareness.setLocalState({
         ...currentState,
-        userId: selfId,
+        userId: self.id,
         name,
         avatar,
         color,
@@ -196,7 +215,6 @@ export default function CollaborativeEditor({
       });
     };
 
-    syncSelfAwareness();
     const unsubSelf = room.subscribe("status", syncSelfAwareness);
 
     // Presence bar — rebuild whenever awareness changes.
@@ -276,7 +294,7 @@ export default function CollaborativeEditor({
       setEditorReady(false);
       setStatus("loading");
     };
-  }, [fileId, initialCode, readOnly, onPresenceChange, debouncedSave]);
+  }, [fileId, initialCode, readOnly, onPresenceChange, debouncedSave, currentUser]);
 
   const handleMount = useCallback(
     (editor: Monaco.editor.IStandaloneCodeEditor) => {

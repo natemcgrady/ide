@@ -40,7 +40,6 @@ interface IDEWithFileProps {
   initialLanguage: Language;
   initialCode: string;
   canWrite: boolean;
-  isOwner: boolean;
 }
 
 export default function IDEWithFile({
@@ -49,7 +48,6 @@ export default function IDEWithFile({
   initialLanguage,
   initialCode,
   canWrite,
-  isOwner,
 }: IDEWithFileProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [language, setLanguage] = useState<Language>(initialLanguage);
@@ -234,17 +232,6 @@ export default function IDEWithFile({
     };
   }, [closeStream]);
 
-  const handleDelete = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
-      if (res.ok) {
-        window.location.href = "/";
-      }
-    } catch {
-      // Error handled by dialog/UI
-    }
-  }, [fileId]);
-
   const CONSOLE_MIN_HEIGHT = 120;
   const CONSOLE_DEFAULT_HEIGHT = 280;
   const CONSOLE_MAX_HEIGHT = 600;
@@ -300,7 +287,6 @@ export default function IDEWithFile({
         fileId={fileId}
         fileTitle={fileTitle}
         onTitleChange={canWrite ? handleTitleChange : undefined}
-        onDelete={isOwner ? handleDelete : undefined}
         language={language}
         onLanguageChange={handleLanguageChange}
         onRun={handleRun}

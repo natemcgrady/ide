@@ -17,6 +17,8 @@ const languageMap: Record<Language, string> = {
 };
 
 export interface CollaboratorPresence {
+  clientId: string;
+  isSelf: boolean;
   userId: string;
   name: string;
   avatar: string | null;
@@ -196,20 +198,35 @@ export default function CollaborativeEditor({
 
       states.forEach((state, clientId) => {
         const s = state as Record<string, unknown>;
-        if (!s.userId) return;
         const isLocal = clientId === localClientId;
         const userObj =
           typeof s.user === "object" && s.user !== null
             ? (s.user as Record<string, unknown>)
             : null;
+        const userId =
+          typeof s.userId === "string" && s.userId.length > 0
+            ? s.userId
+            : `client:${clientId}`;
+        const name =
+          typeof s.name === "string"
+            ? s.name
+            : typeof userObj?.name === "string"
+              ? userObj.name
+              : "Anonymous";
+        const color =
+          typeof s.color === "string"
+            ? s.color
+            : typeof userObj?.color === "string"
+              ? userObj.color
+              : hashToColor(userId);
 
         users[isLocal ? "unshift" : "push"]({
-          userId: String(s.userId),
-          name: String(s.name ?? userObj?.name ?? "Anonymous"),
+          clientId: String(clientId),
+          isSelf: isLocal,
+          userId,
+          name,
           avatar: typeof s.avatar === "string" ? s.avatar : null,
-          color: String(
-            s.color ?? userObj?.color ?? hashToColor(String(s.userId)),
-          ),
+          color,
         });
       });
 

@@ -5,6 +5,13 @@ import useSWR from "swr";
 import type { Language } from "@/lib/executor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import LanguageSelector from "./LanguageSelector";
 import {
   DropdownMenu,
@@ -21,7 +28,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Link from "next/link";
-import { Play, Loader2, LogOut, User, ArrowLeft, Share2, Pencil, Trash2 } from "lucide-react";
+import {
+  Play,
+  Loader2,
+  LogOut,
+  User,
+  ArrowLeft,
+  Share2,
+  Pencil,
+} from "lucide-react";
 import ShareDialog from "./ShareDialog";
 
 interface UserData {
@@ -38,6 +53,8 @@ const userFetcher = async (url: string): Promise<UserData | null> => {
 };
 
 export interface CollaboratorPresence {
+  clientId: string;
+  isSelf: boolean;
   userId: string;
   name: string;
   avatar: string | null;
@@ -53,7 +70,6 @@ interface ToolbarProps {
   fileId?: string;
   fileTitle?: string;
   onTitleChange?: (title: string) => void;
-  onDelete?: () => void | Promise<void>;
   canWrite?: boolean;
   collaborators?: CollaboratorPresence[];
 }
@@ -67,7 +83,6 @@ export default function Toolbar({
   fileId,
   fileTitle,
   onTitleChange,
-  onDelete,
   canWrite = true,
   collaborators = [],
 }: ToolbarProps) {
@@ -117,19 +132,6 @@ export default function Toolbar({
   };
 
   const [shareOpen, setShareOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const handleDeleteClick = async () => {
-    if (!onDelete) return;
-    setIsDeleting(true);
-    try {
-      await onDelete();
-      setDeleteOpen(false);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   const initials = user?.name
     ? user.name
@@ -139,6 +141,12 @@ export default function Toolbar({
         .toUpperCase()
         .slice(0, 2)
     : "?";
+  const selfCollaborator = collaborators.find((c) => c.isSelf);
+  const hasOtherCollaborators = collaborators.some((c) => !c.isSelf);
+  const userAvatarCollabColor =
+    fileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
+  const otherCollaborators = collaborators.filter((c) => !c.isSelf);
+  const showCollabGroup = Boolean(fileId && canWrite);
 
   return (
     <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
@@ -199,63 +207,36 @@ export default function Toolbar({
       </div>
 
       <div className="flex items-center gap-3">
-        {collaborators.length > 0 && (
-          <div className="flex items-center gap-1" aria-label="Active collaborators">
-            {collaborators.map((c) => (
-              <div
-                key={c.userId}
-                className="relative"
-                title={`${c.name} (${c.color})`}
+        {showCollabGroup && (
+          <AvatarGroup className="mr-1" aria-label="Active collaborators">
+            {otherCollaborators.map((c) => (
+              <Avatar
+                key={c.clientId}
+                title={c.name}
+                className="size-8 ring-2 ring-offset-2 ring-offset-background"
+                style={{ boxShadow: `0 0 0 2px ${c.color}` }}
               >
-                <div
-                  className="flex size-8 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-background"
-                  style={{
-                    borderColor: c.color,
-                    boxShadow: `0 0 0 2px ${c.color}`,
-                  }}
-                >
-                  {c.avatar ? (
-                    <img
-                      src={c.avatar}
-                      alt={c.name}
-                      className="size-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <span
-                      className="text-xs font-medium"
-                      style={{ color: c.color }}
-                    >
-                      {c.name.slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-              </div>
+                {c.avatar ? (
+                  <AvatarImage
+                    src={c.avatar}
+                    alt={c.name}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <AvatarFallback style={{ color: c.color }}>
+                    {c.name.slice(0, 1).toUpperCase()}
+                  </AvatarFallback>
+                )}
+              </Avatar>
             ))}
-          </div>
-        )}
-        {fileId && canWrite && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShareOpen(true)}
-            aria-label="Share file"
-          >
-            <Share2 className="size-4" />
-            Share
-          </Button>
-        )}
-        {fileId && onDelete && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Delete file"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+            <AvatarGroupCount
+              aria-label="Share file"
+              title="Share file"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2 className="size-4" />
+            </AvatarGroupCount>
+          </AvatarGroup>
         )}
         {isRunning ? (
           <Button
@@ -284,6 +265,12 @@ export default function Toolbar({
             <button
               type="button"
               className="flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-border bg-muted ring-offset-background transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+              style={{
+                borderColor: userAvatarCollabColor,
+                boxShadow: userAvatarCollabColor
+                  ? `0 0 0 2px ${userAvatarCollabColor}`
+                  : undefined,
+              }}
               disabled={isPending}
               aria-label="User menu"
             >
@@ -317,40 +304,6 @@ export default function Toolbar({
         {shareOpen && fileId && (
           <ShareDialog fileId={fileId} onClose={() => setShareOpen(false)} />
         )}
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete file?</DialogTitle>
-              <DialogDescription>
-                This will permanently delete "{fileTitle || "Untitled"}". This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setDeleteOpen(false)}
-                disabled={isDeleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDeleteClick}
-                disabled={isDeleting}
-                className="flex items-center gap-2"
-              >
-                {isDeleting ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  "Delete"
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );

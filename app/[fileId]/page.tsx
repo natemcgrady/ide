@@ -28,7 +28,6 @@ export default async function FileEditorPage({
   }
 
   const canWrite = await hasFileAccess(fileId, user.id, "write");
-  const isOwner = row.file.ownerUserId === user.id;
 
   return (
     <IDEWithFile
@@ -37,7 +36,6 @@ export default async function FileEditorPage({
       initialLanguage={row.file.language as "python" | "typescript"}
       initialCode={row.file.contentText}
       canWrite={canWrite}
-      isOwner={isOwner}
     />
   );
 }

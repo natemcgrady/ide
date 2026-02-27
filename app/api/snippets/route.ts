@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, codeSnippets } from '@/lib/db';
-import { eq, desc } from 'drizzle-orm';
+import { desc, eq, notInArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { isSupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/languages';
+
+const supportedLanguagesList = SUPPORTED_LANGUAGES.join(', ');
+
+async function purgeUnsupportedSnippets() {
+  await db
+    .delete(codeSnippets)
+    .where(notInArray(codeSnippets.language, [...SUPPORTED_LANGUAGES]));
+}
 
 // GET - List all snippets
 export async function GET() {
   try {
+    await purgeUnsupportedSnippets();
+
     const snippets = await db
       .select()
       .from(codeSnippets)
@@ -24,12 +35,21 @@ export async function GET() {
 // POST - Create a new snippet
 export async function POST(request: NextRequest) {
   try {
+    await purgeUnsupportedSnippets();
+
     const body = await request.json();
     const { name, code, language } = body;
 
     if (!name || !code || !language) {
       return NextResponse.json(
         { error: 'Name, code, and language are required' },
+        { status: 400 }
+      );
+    }
+
+    if (!isSupportedLanguage(language)) {
+      return NextResponse.json(
+        { error: `Invalid language. Supported: ${supportedLanguagesList}` },
         { status: 400 }
       );
     }
@@ -59,6 +79,8 @@ export async function POST(request: NextRequest) {
 // PUT - Update an existing snippet
 export async function PUT(request: NextRequest) {
   try {
+    await purgeUnsupportedSnippets();
+
     const body = await request.json();
     const { id, name, code, language } = body;
 
@@ -72,7 +94,15 @@ export async function PUT(request: NextRequest) {
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (name) updates.name = name;
     if (code) updates.code = code;
-    if (language) updates.language = language;
+    if (language !== undefined) {
+      if (!isSupportedLanguage(language)) {
+        return NextResponse.json(
+          { error: `Invalid language. Supported: ${supportedLanguagesList}` },
+          { status: 400 }
+        );
+      }
+      updates.language = language;
+    }
 
     await db
       .update(codeSnippets)
@@ -105,6 +135,8 @@ export async function PUT(request: NextRequest) {
 // DELETE - Delete a snippet
 export async function DELETE(request: NextRequest) {
   try {
+    await purgeUnsupportedSnippets();
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

@@ -4,8 +4,9 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { Sandbox } from '@vercel/sandbox';
+import { isSupportedLanguage, type SupportedLanguage } from '@/lib/languages';
 
-export type Language = 'javascript' | 'typescript' | 'python' | 'go';
+export type Language = SupportedLanguage;
 
 export interface ExecutionResult {
   output: string;
@@ -26,11 +27,6 @@ const localPythonCandidates = [venvPython, 'python3', 'python'] as const;
 const pythonRequirementsCandidates = ['python-requirements.txt', 'requirements.txt'] as const;
 
 const languageConfigs: Record<Language, LanguageConfig> = {
-  javascript: {
-    extension: '.js',
-    command: 'node',
-    args: (filePath) => [filePath],
-  },
   typescript: {
     extension: '.ts',
     command: 'npx',
@@ -40,11 +36,6 @@ const languageConfigs: Record<Language, LanguageConfig> = {
     extension: '.py',
     command: venvPython,
     args: (filePath) => [filePath],
-  },
-  go: {
-    extension: '.go',
-    command: 'go',
-    args: (filePath) => ['run', filePath],
   },
 };
 
@@ -316,6 +307,6 @@ function runProcess(
 }
 
 export function isValidLanguage(lang: string): lang is Language {
-  return ['javascript', 'typescript', 'python', 'go'].includes(lang);
+  return isSupportedLanguage(lang);
 }
 

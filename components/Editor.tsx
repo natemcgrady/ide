@@ -11,10 +11,8 @@ interface EditorProps {
 }
 
 const languageMap: Record<Language, string> = {
-  javascript: 'javascript',
   typescript: 'typescript',
   python: 'python',
-  go: 'go',
 };
 
 export default function Editor({ code, language, onChange, onRun }: EditorProps) {
@@ -26,7 +24,7 @@ export default function Editor({ code, language, onChange, onRun }: EditorProps)
   };
 
   return (
-    <div 
+    <div
       className="h-full w-full"
       onKeyDown={handleKeyDown}
     >
@@ -38,27 +36,10 @@ export default function Editor({ code, language, onChange, onRun }: EditorProps)
         theme="vs-dark"
         options={{
           fontSize: 14,
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           automaticLayout: true,
           tabSize: 2,
-          wordWrap: 'on',
-          lineNumbers: 'on',
-          renderLineHighlight: 'line',
-          cursorBlinking: 'smooth',
-          cursorSmoothCaretAnimation: 'on',
-          smoothScrolling: true,
-          padding: { top: 16, bottom: 16 },
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          overviewRulerBorder: false,
-          scrollbar: {
-            vertical: 'auto',
-            horizontal: 'auto',
-            verticalScrollbarSize: 10,
-            horizontalScrollbarSize: 10,
-          },
         }}
       />
     </div>

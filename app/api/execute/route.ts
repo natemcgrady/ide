@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeCode, isValidLanguage } from '@/lib/executor';
+import { SUPPORTED_LANGUAGES } from '@/lib/languages';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     if (!language || !isValidLanguage(language)) {
       return NextResponse.json(
-        { error: 'Invalid language. Supported: javascript, typescript, python, go' },
+        { error: `Invalid language. Supported: ${SUPPORTED_LANGUAGES.join(', ')}` },
         { status: 400 }
       );
     }

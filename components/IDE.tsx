@@ -1,21 +1,22 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import type { Language } from '@/lib/executor';
-import type { CodeSnippet } from '@/lib/db/schema';
-import Console from './Console';
-import Toolbar from './Toolbar';
-import SaveDialog from './SaveDialog';
-import SnippetsList from './SnippetsList';
-import languageTemplates from '@/lib/code-templates';
+import { useState, useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
+import type { Language } from "@/lib/executor";
+import type { CodeSnippet } from "@/lib/db/schema";
+import { isSupportedLanguage } from "@/lib/languages";
+import Console from "./Console";
+import Toolbar from "./Toolbar";
+import SaveDialog from "./SaveDialog";
+import SnippetsList from "./SnippetsList";
+import languageTemplates from "@/lib/code-templates";
 
 // Dynamically import Monaco Editor to avoid SSR issues
-const Editor = dynamic(() => import('./Editor'), { 
+const Editor = dynamic(() => import("./Editor"), {
   ssr: false,
   loading: () => (
-    <div className="h-full w-full flex items-center justify-center bg-[#1e1e1e]">
-      <div className="text-[#8b949e]">Loading editor...</div>
+    <div className="flex h-full w-full items-center justify-center bg-background">
+      <span className="text-sm text-muted-foreground">Loading editor...</span>
     </div>
   ),
 });
@@ -28,16 +29,20 @@ interface ExecutionResult {
 }
 
 export default function IDE() {
-  const [language, setLanguage] = useState<Language>('javascript');
-  const [code, setCode] = useState<string>(languageTemplates.javascript);
-  const [output, setOutput] = useState<string>('');
-  const [error, setError] = useState<string>('');
+  const [language, setLanguage] = useState<Language>("python");
+  const [code, setCode] = useState<string>(languageTemplates.python);
+  const [output, setOutput] = useState<string>("");
+  const [error, setError] = useState<string>("");
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [executionTime, setExecutionTime] = useState<number | undefined>(undefined);
-  
+  const [executionTime, setExecutionTime] = useState<number | undefined>(
+    undefined,
+  );
+
   // Snippet management state
-  const [currentSnippet, setCurrentSnippet] = useState<CodeSnippet | null>(null);
-  const [savedCode, setSavedCode] = useState<string>('');
+  const [currentSnippet, setCurrentSnippet] = useState<CodeSnippet | null>(
+    null,
+  );
+  const [savedCode, setSavedCode] = useState<string>("");
   const [snippets, setSnippets] = useState<CodeSnippet[]>([]);
   const [isLoadingSnippets, setIsLoadingSnippets] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -49,11 +54,11 @@ export default function IDE() {
   const fetchSnippets = useCallback(async () => {
     setIsLoadingSnippets(true);
     try {
-      const response = await fetch('/api/snippets');
+      const response = await fetch("/api/snippets");
       const data = await response.json();
       setSnippets(data);
     } catch (err) {
-      console.error('Failed to fetch snippets:', err);
+      console.error("Failed to fetch snippets:", err);
     } finally {
       setIsLoadingSnippets(false);
     }
@@ -63,107 +68,116 @@ export default function IDE() {
     setLanguage(newLanguage);
     setCode(languageTemplates[newLanguage]);
     setCurrentSnippet(null);
-    setSavedCode('');
+    setSavedCode("");
     // Clear console when switching languages
-    setOutput('');
-    setError('');
+    setOutput("");
+    setError("");
     setExecutionTime(undefined);
   }, []);
 
   const handleCodeChange = useCallback((value: string | undefined) => {
-    setCode(value || '');
+    setCode(value || "");
   }, []);
 
   const handleRun = useCallback(async () => {
     setIsRunning(true);
-    setOutput('');
-    setError('');
+    setOutput("");
+    setError("");
     setExecutionTime(undefined);
 
     try {
-      const response = await fetch('/api/execute', {
-        method: 'POST',
+      const response = await fetch("/api/execute", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ code, language }),
       });
 
       const result: ExecutionResult = await response.json();
-      
+
       setOutput(result.output);
       setError(result.error);
       setExecutionTime(result.executionTime);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to execute code');
+      setError(err instanceof Error ? err.message : "Failed to execute code");
     } finally {
       setIsRunning(false);
     }
   }, [code, language]);
 
   const handleClear = useCallback(() => {
-    setOutput('');
-    setError('');
+    setOutput("");
+    setError("");
     setExecutionTime(undefined);
   }, []);
 
-  const handleSave = useCallback(async (name: string) => {
-    try {
-      if (currentSnippet) {
-        // Update existing snippet
-        const response = await fetch('/api/snippets', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: currentSnippet.id,
-            name,
-            code,
-            language,
-          }),
-        });
-        const updated = await response.json();
-        setCurrentSnippet(updated);
-        setSavedCode(code);
-      } else {
-        // Create new snippet
-        const response = await fetch('/api/snippets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, code, language }),
-        });
-        const created = await response.json();
-        setCurrentSnippet(created);
-        setSavedCode(code);
+  const handleSave = useCallback(
+    async (name: string) => {
+      try {
+        if (currentSnippet) {
+          // Update existing snippet
+          const response = await fetch("/api/snippets", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: currentSnippet.id,
+              name,
+              code,
+              language,
+            }),
+          });
+          const updated = await response.json();
+          setCurrentSnippet(updated);
+          setSavedCode(code);
+        } else {
+          // Create new snippet
+          const response = await fetch("/api/snippets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, code, language }),
+          });
+          const created = await response.json();
+          setCurrentSnippet(created);
+          setSavedCode(code);
+        }
+        setShowSaveDialog(false);
+      } catch (err) {
+        console.error("Failed to save snippet:", err);
       }
-      setShowSaveDialog(false);
-    } catch (err) {
-      console.error('Failed to save snippet:', err);
-    }
-  }, [code, language, currentSnippet]);
+    },
+    [code, language, currentSnippet],
+  );
 
   const handleLoadSnippet = useCallback((snippet: CodeSnippet) => {
     setCode(snippet.code);
-    setLanguage(snippet.language as Language);
+    const normalized = snippet.language?.toLowerCase();
+    setLanguage(
+      (isSupportedLanguage(normalized) ? normalized : 'python') as Language
+    );
     setCurrentSnippet(snippet);
     setSavedCode(snippet.code);
     setShowSnippetsList(false);
-    setOutput('');
-    setError('');
+    setOutput("");
+    setError("");
     setExecutionTime(undefined);
   }, []);
 
-  const handleDeleteSnippet = useCallback(async (id: string) => {
-    try {
-      await fetch(`/api/snippets?id=${id}`, { method: 'DELETE' });
-      setSnippets((prev) => prev.filter((s) => s.id !== id));
-      if (currentSnippet?.id === id) {
-        setCurrentSnippet(null);
-        setSavedCode('');
+  const handleDeleteSnippet = useCallback(
+    async (id: string) => {
+      try {
+        await fetch(`/api/snippets?id=${id}`, { method: "DELETE" });
+        setSnippets((prev) => prev.filter((s) => s.id !== id));
+        if (currentSnippet?.id === id) {
+          setCurrentSnippet(null);
+          setSavedCode("");
+        }
+      } catch (err) {
+        console.error("Failed to delete snippet:", err);
       }
-    } catch (err) {
-      console.error('Failed to delete snippet:', err);
-    }
-  }, [currentSnippet]);
+    },
+    [currentSnippet],
+  );
 
   const handleOpenSaveDialog = useCallback(() => {
     setShowSaveDialog(true);
@@ -177,7 +191,7 @@ export default function IDE() {
   // Keyboard shortcut for save (Cmd/Ctrl+S)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         if (currentSnippet) {
           // Quick save if already has a name
@@ -188,12 +202,12 @@ export default function IDE() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentSnippet, handleSave]);
 
   return (
-    <div className="h-screen flex flex-col bg-[#0d1117]">
+    <div className="flex h-screen flex-col bg-background">
       <Toolbar
         language={language}
         onLanguageChange={handleLanguageChange}
@@ -204,11 +218,9 @@ export default function IDE() {
         currentSnippetName={currentSnippet?.name}
         hasUnsavedChanges={hasUnsavedChanges}
       />
-      
-      {/* Main content area with resizable panels */}
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Editor Panel - 60% */}
-        <div className="flex-6 min-h-0">
+
+      <div className="grid min-h-0 flex-1 grid-rows-[6fr_4fr]">
+        <div className="min-h-0 overflow-hidden">
           <Editor
             code={code}
             language={language}
@@ -216,9 +228,8 @@ export default function IDE() {
             onRun={handleRun}
           />
         </div>
-        
-        {/* Console Panel - 40% */}
-        <div className="flex-4 min-h-0">
+
+        <div className="min-h-0 overflow-hidden">
           <Console
             output={output}
             error={error}
@@ -234,7 +245,7 @@ export default function IDE() {
         isOpen={showSaveDialog}
         onClose={() => setShowSaveDialog(false)}
         onSave={handleSave}
-        defaultName={currentSnippet?.name || ''}
+        defaultName={currentSnippet?.name || ""}
         isUpdating={!!currentSnippet}
       />
 

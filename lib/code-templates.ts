@@ -1,11 +1,4 @@
-const JAVASCRIPT = `// JavaScript Example
-  function greet(name) {
-    return \`Hello, \${name}!\`;
-  }
-  
-  console.log(greet('World'));
-  console.log('Welcome to the Interview IDE');
-  `
+import type { Language } from '@/lib/executor';
 
 const TYPESCRIPT = `// TypeScript Example
   function greet(name: string): string {
@@ -37,26 +30,9 @@ const PYTHON = `# Python Example with Libraries
   print(f"\\nWord counts: {dict(word_counts)}")
   `
 
-const GO = `// Go Example
-  package main
-  
-  import "fmt"
-  
-  func greet(name string) string {
-      return fmt.Sprintf("Hello, %s!", name)
-  }
-  
-  func main() {
-      fmt.Println(greet("World"))
-      fmt.Println("Welcome to the Interview IDE")
-  }
-  `
-
 const languageTemplates = {
-  javascript: JAVASCRIPT,
   typescript: TYPESCRIPT,
   python: PYTHON,
-  go: GO,
-};
+} satisfies Record<Language, string>;
 
 export default languageTemplates;

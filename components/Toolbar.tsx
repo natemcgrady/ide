@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import type { Language } from '@/lib/executor';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import LanguageSelector from './LanguageSelector';
-import { Play, Loader2, FolderOpen, Save } from 'lucide-react';
+import type { Language } from "@/lib/executor";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import LanguageSelector from "./LanguageSelector";
+import { Play, Loader2, FolderOpen, Save } from "lucide-react";
 
 interface ToolbarProps {
   language: Language;
@@ -17,10 +17,10 @@ interface ToolbarProps {
   hasUnsavedChanges?: boolean;
 }
 
-export default function Toolbar({ 
-  language, 
-  onLanguageChange, 
-  onRun, 
+export default function Toolbar({
+  language,
+  onLanguageChange,
+  onRun,
   onSave,
   onLoad,
   isRunning,
@@ -28,42 +28,42 @@ export default function Toolbar({
   hasUnsavedChanges,
 }: ToolbarProps) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 bg-card border-b">
+    <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold tracking-tight">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Interview IDE
         </h1>
         <LanguageSelector language={language} onChange={onLanguageChange} />
         {currentSnippetName && (
-          <Badge variant="secondary" className="gap-2">
+          <Badge className="gap-2">
             {currentSnippetName}
             {hasUnsavedChanges && (
-              <span className="w-2 h-2 bg-orange-500 rounded-full" />
+              <span className="size-2 rounded-full bg-primary" />
             )}
           </Badge>
         )}
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onLoad}>
-          <FolderOpen className="h-4 w-4" />
+        <Button size="sm" onClick={onLoad}>
+          <FolderOpen className="size-4" />
           Open
         </Button>
 
-        <Button variant="outline" size="sm" onClick={onSave}>
-          <Save className="h-4 w-4" />
+        <Button size="sm" onClick={onSave}>
+          <Save className="size-4" />
           Save
         </Button>
 
         <Button size="sm" onClick={onRun} disabled={isRunning}>
           {isRunning ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
               Running...
             </>
           ) : (
             <>
-              <Play className="h-4 w-4" />
+              <Play className="size-4" />
               Run
             </>
           )}

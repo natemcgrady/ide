@@ -53,22 +53,15 @@ const PYTHON_SANDBOX_TIMEOUT = 120000; // 2 minutes
 const PYTHON_INSTALL_TIMEOUT = 60000; // 1 minute
 const SANDBOX_WORKDIR = '/vercel/sandbox';
 
-let cachedPythonRequirements: string | null | undefined;
-
 function shouldUseSandboxForPython(): boolean {
   return process.env.VERCEL === '1' || process.env.USE_VERCEL_SANDBOX === 'true';
 }
 
 async function getPythonRequirements(): Promise<string | null> {
-  if (cachedPythonRequirements !== undefined) {
-    return cachedPythonRequirements;
-  }
-
   for (const candidate of pythonRequirementsCandidates) {
     try {
       const content = await readTextFile(join(process.cwd(), candidate), 'utf-8');
       if (content.trim().length > 0) {
-        cachedPythonRequirements = content;
         return content;
       }
     } catch {
@@ -76,7 +69,6 @@ async function getPythonRequirements(): Promise<string | null> {
     }
   }
 
-  cachedPythonRequirements = null;
   return null;
 }
 

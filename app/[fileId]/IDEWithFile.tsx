@@ -3,8 +3,32 @@
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import type { Language } from "@/lib/executor";
 import Console from "@/components/Console";
-import Toolbar from "@/components/Toolbar";
+import { AppSidebar } from "@/components/app-sidebar";
 import type { CollaboratorPresence } from "@/components/CollaborativeEditor";
+import { Button } from "@/components/ui/button";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+  AvatarImage,
+} from "@/components/ui/avatar";
+import LanguageSelector from "@/components/LanguageSelector";
+import ShareDialog from "@/components/ShareDialog";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Separator } from "@/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { Loader2, Play, Share2 } from "lucide-react";
 
 const CollaborativeEditor = lazy(
   () => import("@/components/CollaborativeEditor"),
@@ -70,12 +94,20 @@ export default function IDEWithFile({
   const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>(
     [],
   );
+  const [shareOpen, setShareOpen] = useState(false);
   const getCodeRef = useRef<(() => string) | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const lastEventIdRef = useRef(0);
   const reconnectAttemptsRef = useRef(0);
   const userCancelledRef = useRef(false);
+  const canEditTitle = Boolean(fileId && canWrite);
+  const selfCollaborator = collaborators.find((c) => c.isSelf);
+  const hasOtherCollaborators = collaborators.some((c) => !c.isSelf);
+  const userAvatarCollabColor =
+    fileId && hasOtherCollaborators ? selfCollaborator?.color : undefined;
+  const otherCollaborators = collaborators.filter((c) => !c.isSelf);
+  const showCollabGroup = Boolean(fileId && canWrite);
 
   const closeStream = useCallback(() => {
     if (eventSourceRef.current) {
@@ -100,6 +132,12 @@ export default function IDEWithFile({
     },
     [fileId, fileTitle],
   );
+
+  const preloadEditor = useCallback(() => {
+    if (typeof window !== "undefined") {
+      void import("@/components/Editor");
+    }
+  }, []);
 
   const handleLanguageChange = useCallback((newLanguage: Language) => {
     setLanguage(newLanguage);
@@ -292,64 +330,150 @@ export default function IDEWithFile({
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <Toolbar
-        fileId={fileId}
-        fileTitle={fileTitle}
-        onTitleChange={canWrite ? handleTitleChange : undefined}
-        language={language}
-        onLanguageChange={handleLanguageChange}
-        onRun={handleRun}
-        onCancel={handleCancel}
-        isRunning={isRunning}
-        canWrite={canWrite}
-        collaborators={collaborators}
+    <SidebarProvider>
+      <AppSidebar
+        user={currentUser}
+        currentFile={{ title: fileTitle, language }}
+        canEditFileName={canEditTitle}
+        onRenameFile={handleTitleChange}
       />
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {editorMounted ? (
-            <Suspense fallback={<EditorLoading />}>
-              <CollaborativeEditor
-                fileId={fileId}
-                language={language}
-                initialCode={initialCode}
-                onRun={handleRun}
-                readOnly={!canWrite}
-                onPresenceChange={setCollaborators}
-                getCodeRef={getCodeRef}
-                currentUser={currentUser}
-              />
-            </Suspense>
-          ) : (
-            <EditorLoading />
-          )}
-        </div>
-
-        <div
-          role="separator"
-          aria-label="Resize console"
-          className="flex shrink-0 cursor-ns-resize select-none items-center justify-center border-t border-border py-1"
-          style={{ minHeight: 10 }}
-          onMouseDown={handleResizeMouseDown}
-          onDoubleClick={handleResizeDoubleClick}
-        >
-          <div className="h-px w-12 rounded-full bg-muted-foreground" />
-        </div>
-
-        <div
-          className="shrink-0 overflow-hidden"
-          style={{ height: consoleHeight, minHeight: CONSOLE_MIN_HEIGHT }}
-        >
-          <Console
-            output={output}
-            error={error}
-            isRunning={isRunning}
-            executionTime={executionTime}
-            onClear={handleClear}
+      <SidebarInset>
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+          <SidebarTrigger className="-ml-1" />
+          <Separator
+            orientation="vertical"
+            className="mr-1 data-[orientation=vertical]:h-4"
           />
+          <Breadcrumb className="min-w-0">
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden md:block">
+                <BreadcrumbPage className="text-muted-foreground">
+                  Files
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden md:block" />
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="max-w-64 truncate font-semibold text-foreground">
+                  {fileTitle || "Untitled"}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div className="ml-auto flex items-center gap-2">
+            <LanguageSelector
+              language={language}
+              onChange={handleLanguageChange}
+              disabled={!canWrite}
+            />
+            {showCollabGroup && (
+              <AvatarGroup aria-label="Active collaborators">
+                {otherCollaborators.map((c) => (
+                  <Avatar
+                    key={c.clientId}
+                    title={c.name}
+                    className="size-8 ring-2 ring-offset-2 ring-offset-background"
+                    style={{ boxShadow: `0 0 0 2px ${c.color}` }}
+                  >
+                    {c.avatar ? (
+                      <AvatarImage
+                        src={c.avatar}
+                        alt={c.name}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <AvatarFallback style={{ color: c.color }}>
+                        {c.name.slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+                ))}
+                <AvatarGroupCount
+                  aria-label="Share file"
+                  title="Share file"
+                  onClick={() => setShareOpen(true)}
+                  style={{
+                    borderColor: userAvatarCollabColor,
+                    boxShadow: userAvatarCollabColor
+                      ? `0 0 0 2px ${userAvatarCollabColor}`
+                      : undefined,
+                  }}
+                >
+                  <Share2 className="size-4" />
+                </AvatarGroupCount>
+              </AvatarGroup>
+            )}
+            {isRunning ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleCancel}
+                disabled={!handleCancel}
+              >
+                <Loader2 className="size-4 animate-spin" />
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleRun}
+                onMouseEnter={preloadEditor}
+                onFocus={preloadEditor}
+              >
+                <Play className="size-4" />
+                Run
+              </Button>
+            )}
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col bg-background">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {editorMounted ? (
+              <Suspense fallback={<EditorLoading />}>
+                <CollaborativeEditor
+                  fileId={fileId}
+                  language={language}
+                  initialCode={initialCode}
+                  onRun={handleRun}
+                  readOnly={!canWrite}
+                  onPresenceChange={setCollaborators}
+                  getCodeRef={getCodeRef}
+                  currentUser={currentUser}
+                />
+              </Suspense>
+            ) : (
+              <EditorLoading />
+            )}
+          </div>
+
+          <div
+            role="separator"
+            aria-label="Resize console"
+            className="flex shrink-0 cursor-ns-resize select-none items-center justify-center border-t border-border py-1"
+            style={{ minHeight: 10 }}
+            onMouseDown={handleResizeMouseDown}
+            onDoubleClick={handleResizeDoubleClick}
+          >
+            <div className="h-px w-12 rounded-full bg-muted-foreground" />
+          </div>
+
+          <div
+            className="shrink-0 overflow-hidden"
+            style={{ height: consoleHeight, minHeight: CONSOLE_MIN_HEIGHT }}
+          >
+            <Console
+              output={output}
+              error={error}
+              isRunning={isRunning}
+              executionTime={executionTime}
+              onClear={handleClear}
+            />
+          </div>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+      {shareOpen && fileId && (
+        <ShareDialog fileId={fileId} onClose={() => setShareOpen(false)} />
+      )}
+    </SidebarProvider>
   );
 }
